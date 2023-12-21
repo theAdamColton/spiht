@@ -23,6 +23,15 @@ def get_offspring(i,j,h,w):
             (2*i+1, 2*j+1),
         ]
 
+def are_descendants_significant(arr,i,j,n):
+    _, h, w =arr.shape
+
+    for i,j in get_offspring(i,j,h,w):
+        if is_set_significant(arr,i,j,n):
+            return True
+
+    return False
+
 def is_set_significant(arr,i,j,n):
     _, h, w =arr.shape
 
@@ -38,14 +47,13 @@ def is_set_significant(arr,i,j,n):
 LisElement = namedtuple("LisElement", ['i', 'j', 'type'])
 
 Q_SCALE = 100
-
 def quantize(arr):
     return (arr*Q_SCALE).astype(np.int16)
 
 def dequantize(arr):
     return arr / Q_SCALE
 
-def spiht_encode(image, wavelet='bior4.4', level=6, max_bits=100000):
+def spiht_encode(image, wavelet='bior4.4', level=6, max_bits=200000):
     coeffs = wavedec2(image, mode='periodization', wavelet=wavelet, level=level)
     arr,slices = pywt.coeffs_to_array(coeffs, padding=None, axes=(-2,-1))
 
@@ -94,8 +102,12 @@ def spiht_encode(image, wavelet='bior4.4', level=6, max_bits=100000):
                 append_to_out(is_element_sig)
 
                 if is_element_sig:
-                    # outputs sign
+                    # outputs all signs
                     append_to_out(*tuple(x for x in arr[:,i,j]>0))
+
+                    # outputs all significances
+                    append_to_out(*tuple(is_element_significant(x,n) for x in arr[:,i,j]))
+
                     lsp.append((i,j))
 
             while len(lis) > 0:
@@ -104,7 +116,7 @@ def spiht_encode(image, wavelet='bior4.4', level=6, max_bits=100000):
                 i,j = lis_element.i, lis_element.j
 
                 if lis_element.type == "A":
-                    is_set_sig = is_set_significant(arr,lis_element.i, lis_element.j,n)
+                    is_set_sig = are_descendants_significant(arr,lis_element.i, lis_element.j,n)
 
                     append_to_out(is_set_sig)
 
@@ -115,7 +127,11 @@ def spiht_encode(image, wavelet='bior4.4', level=6, max_bits=100000):
 
                             if is_element_sig:
                                 lsp.append((k,l))
+                                # outputs all signs
                                 append_to_out(*tuple(x for x in arr[:, k,l] > 0))
+
+                                # outputs all significances
+                                append_to_out(*tuple(is_element_significant(x,n) for x in arr[:, k, l]))
                             else:
                                 lip.append((k,l))
 
@@ -127,7 +143,7 @@ def spiht_encode(image, wavelet='bior4.4', level=6, max_bits=100000):
                 else:
                     # type B
                     descendents_past_offspring = sum([get_offspring(k,l,h,w) for (k,l) in get_offspring(i,j,h,w)], [])
-                    is_l_significant = any(is_set_significant(arr,k,l,n) for (k,l) in descendents_past_offspring)
+                    is_l_significant = any(are_descendants_significant(arr,k,l,n) for (k,l) in descendents_past_offspring)
                     append_to_out(is_l_significant)
                     if is_l_significant:
                         for k,l in descendents_past_offspring:
@@ -136,7 +152,6 @@ def spiht_encode(image, wavelet='bior4.4', level=6, max_bits=100000):
 
             # refinement pass
             print('refinement')
-            append_to_out('refine')
 
             for lsp_i in range(lsp_len):
                 i,j = lsp[lsp_i]
@@ -204,7 +219,11 @@ def spiht_decode(d, n, h, w, wavelet='bior4.4', level=6):
                 if is_element_sig:
                     # 1 or -1
                     signs = np.array([pop() for _ in range(c)]) * 2 - 1
-                    arr[:, i,j] = arr[:, i, j] + 2**n * signs
+
+                    values = np.array([pop() for _ in range(c)])
+                    values = (values * 1.5) * 2**n
+
+                    arr[:, i,j] = values * signs
                     lsp.append((i,j,))
 
 
@@ -222,12 +241,15 @@ def spiht_decode(d, n, h, w, wavelet='bior4.4', level=6):
 
                             if is_element_sig:
                                 lsp.append((k,l,))
-                                # 2^n <= abs(arr[k,l]) <= 2^(n+1)
-                                values = np.ones(c) + 0.5
-                                values = values * 2**n
 
                                 # either 1 or -1
                                 signs = np.array([pop() for _ in range(c)]) * 2 - 1
+
+                                # 0 or 1
+                                values = np.array([pop() for _ in range(c)])
+
+                                # 2^n <= abs(arr[k,l]) <= 2^(n+1)
+                                values = (values * 1.5) * 2**n
 
                                 arr[:, k,l] = arr[:, k, l] + values * signs
                             else:
@@ -242,7 +264,6 @@ def spiht_decode(d, n, h, w, wavelet='bior4.4', level=6):
                     # type B
 
                     descendents_past_offspring = sum([get_offspring(k,l,h,w) for (k,l) in get_offspring(i,j,h,w)], [])
-                    is_l_significant = any(is_set_significant(arr,k,l,n) for (k,l) in descendents_past_offspring)
                     is_l_significant = pop()
                     if is_l_significant:
                         for k,l in descendents_past_offspring:
@@ -251,7 +272,6 @@ def spiht_decode(d, n, h, w, wavelet='bior4.4', level=6):
 
             # refinement pass
             print('refinement ', n)
-            assert pop() == 'refine'
             # does all the old elements, not added this round
             for lsp_i in range(lsp_len):
                 i,j = lsp[lsp_i]
@@ -260,7 +280,7 @@ def spiht_decode(d, n, h, w, wavelet='bior4.4', level=6):
                 # either 1 or -1
                 signs = (arr[:,i,j] > 0) * 2 - 1
 
-                values = bits * 1.5
+                values = bits
                 # either 0 or 1.5 * 2**n
                 values = values * 2**n
 

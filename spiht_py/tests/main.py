@@ -18,4 +18,3 @@ class Tests(unittest.TestCase):
         imshow(scale_0_1(image_hat))
         imshow(image_hat)
 
-
