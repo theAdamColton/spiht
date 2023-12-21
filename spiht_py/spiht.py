@@ -8,7 +8,7 @@ from collections import namedtuple
 from .utils import imshow, is_power_of_two
 
 def is_bit_set(x, n):
-    return np.bitwise_and(x, 2**n)
+    return np.bitwise_and(np.abs(x), 2**n) > 0
 
 def is_element_significant(x, n):
     return np.any(np.abs(x) >= 2**n)
@@ -35,119 +35,162 @@ def is_set_significant(arr,i,j,n):
 
     return False
 
-LspElement = namedtuple("LspElement", ['i','j','n'])
 LisElement = namedtuple("LisElement", ['i', 'j', 'type'])
+
+Q_SCALE = 100
+
+def quantize(arr):
+    return (arr*Q_SCALE).astype(np.int16)
+
+def dequantize(arr):
+    return arr / Q_SCALE
 
 def spiht_encode(image, wavelet='bior4.4', level=6, max_bits=100000):
     coeffs = wavedec2(image, mode='periodization', wavelet=wavelet, level=level)
     arr,slices = pywt.coeffs_to_array(coeffs, padding=None, axes=(-2,-1))
-    arr = arr.astype(np.int16)
 
     c, h, w = arr.shape
-
-    lis = [LisElement(i,j,'A') for i in range(h) for j in range(w) if i%2 != 0 and j%2!=0 ]
-    lip = [(i,j) for i in range(h) for j in range(w)]
-
-    lsp:List[LspElement] = []
-
-    out = []
-
-    def append_to_out(*x):
-        for y in x:
-            if len(out) >= max_bits:
-                return out
-            out.append(y)
+    arr = quantize(arr)
 
     n = math.floor(math.log2(np.abs(arr).max()))
-
-    while n >=0:
-        # sorting pass
-
-        lsp_len = len(lsp)
-
-        for i,j in lip:
-            is_element_sig = is_element_significant(arr[:, i, j], n)
-
-            append_to_out(is_element_sig)
-
-            if is_element_sig:
-                # outputs sign
-                append_to_out( x for x in arr[:,i,j]>0)
-                lsp.append(LspElement(i,j,n))
-
-        while len(lis) > 0:
-            lis_element = lis.pop(0)
-
-            i,j = lis_element.i, lis_element.j
-
-            if lis_element.type == "A":
-                is_set_sig = is_set_significant(arr,lis_element.i, lis_element.j,n)
-
-                append_to_out(is_set_sig)
-
-                if is_set_sig:
-                    for k,l in get_offspring(lis_element.i, lis_element.j, h, w):
-                        is_element_sig = is_element_significant(arr[:, k, l], n)
-                        append_to_out(is_element_sig)
-
-                        if is_element_sig:
-                            lsp.append(LspElement(k,l,n))
-                            append_to_out(x for x in arr[:, k,l] > 0)
-                        else:
-                            lip.append((k,l))
-
-                    has_descendents_past_offspring = i * 4 < h and j * 4 < w
-
-                    if has_descendents_past_offspring:
-                        lis.append(LisElement(i,j,"B"))
-                            
-            else:
-                # type B
-
-                descendents_past_offspring = sum([get_offspring(k,l,h,w) for (k,l) in get_offspring(i,j,h,w)], [])
-                is_l_significant = any(is_set_significant(arr,k,l,n) for (k,l) in descendents_past_offspring)
-                append_to_out(is_l_significant)
-                if is_l_significant:
-                    for k,l in descendents_past_offspring:
-                        lis.append(LisElement(k,l,"A"))
+    max_n = n
 
 
-        # refinement pass
-        print('refinement')
-        for lsp_i in range(lsp_len):
-            i,j,lsp_n = lsp[lsp_i]
-            if lsp_n < n:
+    class __EndEncoding(Exception):
+        pass
+
+    curr_i = dict(i=0)
+    out = [0] * max_bits
+    def append_to_out(*x):
+        i = curr_i['i']
+        for y in x:
+            if i >= max_bits:
+                raise __EndEncoding()
+            out[i] = y
+            i += 1
+        curr_i['i'] = i
+
+    ll_h = slices[0][1].stop
+    ll_w = slices[0][2].stop
+    lis = []
+    for i in range(ll_h):
+        for j in range(ll_w):
+            if i % 2 == 0 and j% 2 == 0:
+                continue
+            lis.append(LisElement(i,j,'A'))
+    lip = [(i,j) for i in range(ll_h) for j in range(ll_w)]
+    lsp= []
+
+
+    try:
+        while n >=0:
+            # sorting pass
+
+            lsp_len = len(lsp)
+
+            for i,j in lip:
+                is_element_sig = is_element_significant(arr[:, i, j], n)
+
+                append_to_out(is_element_sig)
+
+                if is_element_sig:
+                    # outputs sign
+                    append_to_out(*tuple(x for x in arr[:,i,j]>0))
+                    lsp.append((i,j))
+
+            while len(lis) > 0:
+                lis_element = lis.pop(0)
+
+                i,j = lis_element.i, lis_element.j
+
+                if lis_element.type == "A":
+                    is_set_sig = is_set_significant(arr,lis_element.i, lis_element.j,n)
+
+                    append_to_out(is_set_sig)
+
+                    if is_set_sig:
+                        for k,l in get_offspring(lis_element.i, lis_element.j, h, w):
+                            is_element_sig = is_element_significant(arr[:, k, l], n)
+                            append_to_out(is_element_sig)
+
+                            if is_element_sig:
+                                lsp.append((k,l))
+                                append_to_out(*tuple(x for x in arr[:, k,l] > 0))
+                            else:
+                                lip.append((k,l))
+
+                        has_descendents_past_offspring = i * 4 < h and j * 4 < w
+
+                        if has_descendents_past_offspring:
+                            lis.append(LisElement(i,j,"B"))
+                                
+                else:
+                    # type B
+                    descendents_past_offspring = sum([get_offspring(k,l,h,w) for (k,l) in get_offspring(i,j,h,w)], [])
+                    is_l_significant = any(is_set_significant(arr,k,l,n) for (k,l) in descendents_past_offspring)
+                    append_to_out(is_l_significant)
+                    if is_l_significant:
+                        for k,l in descendents_past_offspring:
+                            lis.append(LisElement(k,l,"A"))
+
+
+            # refinement pass
+            print('refinement')
+            append_to_out('refine')
+
+            for lsp_i in range(lsp_len):
+                i,j = lsp[lsp_i]
                 bits = is_bit_set(arr[:,i,j], n)
-                append_to_out(x for x in bits)
+                append_to_out(*tuple(x for x in bits))
 
-        # quantization pass 
-        print(f'quant pass n {n} kb:{len(out)/1000:.2f}')
-        n -= 1
+            # quantization pass 
+            print(f'quant pass n {n} kb:{curr_i["i"]/1000:.2f}')
+            n -= 1
+    except __EndEncoding:
+        return out, max_n, h, w
 
-    return out, n, h, w
+    return out, max_n, h, w
 
 def spiht_decode(d, n, h, w, wavelet='bior4.4', level=6):
     c = 3
-    arr = np.zeros(c,h,w)
+    arr = np.zeros((c,h,w))
 
-    lis = [LisElement(i,j,'A') for i in range(h) for j in range(w) if i%2 != 0 and j%2!=0 ]
-    lip = [(i,j) for i in range(h) for j in range(w)]
 
-    lsp:List[LspElement] = []
+    # does this just to get the coeff slices
+    dummy_image = arr
+    dummy_coeffs = wavedec2(dummy_image, mode='periodization', wavelet=wavelet, level=level)
+    _, slices = pywt.coeffs_to_array(dummy_coeffs, padding=None, axes=(-2,-1))
 
     def ret():
-        # does this just to get the coeff slices
-        dummy_image = arr
-        dummy_coeffs = wavedec2(dummy_image, mode='periodization', wavelet=wavelet, level=level)
-        _, slices = pywt.coeffs_to_array(dummy_coeffs, padding=None, axes=(-2,-1))
-        coeffs = pywt.array_to_coeffs(arr, slices)
+        coeffs = pywt.array_to_coeffs(arr, slices, output_format='wavedec2')
         rec_image = pywt.waverec2(coeffs, mode='periodization', wavelet=wavelet)
+        rec_image = dequantize(rec_image)
         return rec_image
 
+
+    class __EndDecoding(Exception):
+        pass
+
+    curr_i = dict(i=-1)
     def pop():
-        if len(d) > 0:
-            return d.pop(0)
-        raise StopIteration()
+        i = curr_i['i']
+        if i+1 >= len(d):
+            print("END DECODING")
+            raise __EndDecoding()
+        curr_i['i'] = i + 1
+        return d[curr_i['i']]
+
+
+    ll_h = slices[0][1].stop
+    ll_w = slices[0][2].stop
+    lis = []
+    for i in range(ll_h):
+        for j in range(ll_w):
+            if i % 2 == 0 and j% 2 == 0:
+                continue
+            lis.append(LisElement(i,j,'A'))
+    lip = [(i,j) for i in range(ll_h) for j in range(ll_w)]
+    lsp= []
 
     try:
         while n >=0:
@@ -159,8 +202,10 @@ def spiht_decode(d, n, h, w, wavelet='bior4.4', level=6):
                 is_element_sig = pop()
 
                 if is_element_sig:
-                    signs = np.ndarray([pop() for _ in range(c)]) - 1
-                    arr[:, i,j] = arr[:, i, j] * signs[:, None, None]
+                    # 1 or -1
+                    signs = np.array([pop() for _ in range(c)]) * 2 - 1
+                    arr[:, i,j] = arr[:, i, j] + 2**n * signs
+                    lsp.append((i,j,))
 
 
             while len(lis) > 0:
@@ -176,15 +221,15 @@ def spiht_decode(d, n, h, w, wavelet='bior4.4', level=6):
                             is_element_sig = pop()
 
                             if is_element_sig:
-                                lsp.append(LspElement(k,l,n))
+                                lsp.append((k,l,))
                                 # 2^n <= abs(arr[k,l]) <= 2^(n+1)
-                                values = np.zeros(c) + 1.5
+                                values = np.ones(c) + 0.5
                                 values = values * 2**n
 
                                 # either 1 or -1
-                                signs = np.ndarray([pop() for _ in range(c)]) * 2 - 1
+                                signs = np.array([pop() for _ in range(c)]) * 2 - 1
 
-                                arr[:, k,l] = arr[:, k, l] + values * signs[:, None, None]
+                                arr[:, k,l] = arr[:, k, l] + values * signs
                             else:
                                 lip.append((k,l))
 
@@ -205,25 +250,26 @@ def spiht_decode(d, n, h, w, wavelet='bior4.4', level=6):
 
 
             # refinement pass
-            print('refinement')
+            print('refinement ', n)
+            assert pop() == 'refine'
+            # does all the old elements, not added this round
             for lsp_i in range(lsp_len):
-                i,j,lsp_n = lsp[lsp_i]
-                if lsp_n < n:
-                    bits = np.ndarray([pop() for _ in range(c)])
+                i,j = lsp[lsp_i]
+                bits = np.array([pop() for _ in range(c)])
 
-                    # either 1 or -1
-                    signs = (arr[:,i,j] > 0) * 2 - 1
+                # either 1 or -1
+                signs = (arr[:,i,j] > 0) * 2 - 1
 
-                    values = bits * 1.5
-                    # either 0 or 1.5 * 2**n
-                    values = values * 2**n
+                values = bits * 1.5
+                # either 0 or 1.5 * 2**n
+                values = values * 2**n
 
-                    arr[:,i,j] = arr[:,i,j] + values * signs
+                arr[:,i,j] = arr[:,i,j] + values * signs
 
             # quantization pass 
             n -= 1
 
-    except StopIteration:
+    except __EndDecoding:
         return ret()
 
     return ret()
