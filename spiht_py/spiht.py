@@ -73,18 +73,18 @@ LisElement = namedtuple("LisElement", ['c', 'i', 'j', 'type'])
 
 Q_SCALE = 10
 def quantize(arr):
-    return (arr*Q_SCALE).astype(np.int16)
+    return (arr*Q_SCALE).astype(np.int32)
 
 def dequantize(arr):
     return arr / Q_SCALE
 
-def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=50000000):
+def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=200000):
     coeffs = wavedec2(image, mode='periodization', wavelet=wavelet, level=level)
     arr,slices = pywt.coeffs_to_array(coeffs, padding=None, axes=(-2,-1))
     arr = quantize(arr)
     c, h, w = arr.shape
 
-    n = math.floor(math.log2(np.abs(arr).max()))
+    n = math.floor(math.log2(int(np.abs(arr).max())))
     max_n = n
 
 
@@ -131,6 +131,7 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=50000000):
             # stores the lsp len at the beginning of this n iteration
             lsp_len = len(lsp)
 
+            new_lip = []
             for k,i,j in lip:
                 is_element_sig = is_element_significant(arr[k, i, j], n)
                 append_to_out(is_element_sig)
@@ -138,6 +139,9 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=50000000):
                 if is_element_sig:
                     append_to_out(arr[k,i,j]>=0)
                     lsp.append((k,i,j))
+                else:
+                    new_lip.append((k,i,j))
+            lip = new_lip
 
             lis_retain = []
 
@@ -145,8 +149,6 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=50000000):
                 lis_element = lis.pop(0)
 
                 k,i,j = lis_element.c, lis_element.i, lis_element.j
-
-                append_to_out((k,i,j,lis_element.type))
 
                 if lis_element.type == "A":
                     is_set_sig = are_descendents_significant(arr,k,i,j,n,level)
@@ -185,10 +187,7 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=50000000):
 
             lis = lis_retain
 
-            # refinement pass
             print('refinement')
-            append_to_out('refinement')
-
             for lsp_i in range(lsp_len):
                 k,i,j = lsp[lsp_i]
                 bit = is_bit_set(arr[k,i,j], n)
@@ -199,24 +198,22 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=50000000):
             n -= 1
 
     except __EndEncoding:
-        return out, max_n, h, w
+        return dict(encoded=out, n=max_n, c=c, h=h, w=w, arr=arr)
 
+    return dict(encoded=out, n=max_n, c=c, h=h, w=w, arr=arr)
 
-    return out, max_n, h, w
-
-def spiht_decode(d, n, h, w, wavelet='bior4.4', level=7):
-    c = 3
-    arr = np.zeros((c,h,w), np.int16)
+def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', level=7, **kwargs):
+    rec_arr = np.zeros((c,h,w), np.int32)
 
     # does this just to get the coeff slices
-    dummy_image = arr
+    dummy_image = rec_arr
     dummy_coeffs = wavedec2(dummy_image, mode='periodization', wavelet=wavelet, level=level)
     _, slices = pywt.coeffs_to_array(dummy_coeffs, padding=None, axes=(-2,-1))
 
     def ret():
-        coeffs = pywt.array_to_coeffs(dequantize(arr), slices, output_format='wavedec2')
+        coeffs = pywt.array_to_coeffs(dequantize(rec_arr), slices, output_format='wavedec2')
         rec_image = pywt.waverec2(coeffs, mode='periodization', wavelet=wavelet)
-        return rec_image
+        return dict(rec_image=rec_image, coeffs=coeffs, rec_arr=rec_arr)
 
 
     class __EndDecoding(Exception):
@@ -248,11 +245,12 @@ def spiht_decode(d, n, h, w, wavelet='bior4.4', level=7):
     lsp= []
 
     try:
-        while n >=0:
+        while n >= 0:
             # sorting pass
-
+            # stores the lsp len at the beginning of this n iteration
             lsp_len = len(lsp)
 
+            new_lip = []
             for k,i,j in lip:
                 is_element_sig = pop()
 
@@ -260,8 +258,12 @@ def spiht_decode(d, n, h, w, wavelet='bior4.4', level=7):
                     # 1 or -1
                     sign = pop() * 2 - 1
 
-                    arr[k, i,j] = 1.5 * 2**n * sign
+                    rec_arr[k,i,j] = 1.5 * 2**n * sign
                     lsp.append((k,i,j,))
+                else:
+                    new_lip.append((k,i,j))
+            lip=new_lip
+
 
             lis_retain = []
 
@@ -270,68 +272,65 @@ def spiht_decode(d, n, h, w, wavelet='bior4.4', level=7):
 
                 k,i,j = lis_element.c, lis_element.i, lis_element.j
 
-                sk, si, sj, _type = pop()
-                assert sk==k and si==i and sj==j and _type == lis_element.type
-
                 if lis_element.type == "A":
                     is_set_sig = pop()
 
                     if is_set_sig:
-                        for offspring_i,offspring_j in get_offspring(lis_element.i, lis_element.j, h, w, level):
+                        # processes the four offspring
+                        for offspring_i,offspring_j in get_offspring(i,j,h,w,level):
                             is_element_sig = pop()
 
                             if is_element_sig:
                                 lsp.append((k,offspring_i,offspring_j))
-
                                 # either 1 or -1
                                 sign = pop() * 2 - 1
 
-                                arr[k,offspring_i,offspring_j] = 1.5*2**n * sign
+                                rec_arr[k,offspring_i,offspring_j] = 1.5*2**n * sign
                             else:
                                 lip.append((k, offspring_i, offspring_j))
 
                         has_descendents_past_offspring = i * 4 < h and j * 4 < w
-
                         if has_descendents_past_offspring:
                             lis.append(LisElement(k,i,j,"B"))
                     else:
+                        # keep lis_element in the lis
                         lis_retain.append(lis_element)
                                 
                 else:
                     # type B
-                    descendents_past_offspring = sum([get_offspring(k,l,h,w,level) for (k,l) in get_offspring(i,j,h,w,level)], [])
+                    descendents_past_offspring = sum([get_offspring(offspring_i,offspring_j,h,w,level) for (offspring_i,offspring_j) in get_offspring(i,j,h,w,level)], [])
                     is_l_significant = pop()
                     if is_l_significant:
-                        for offspring_i,offspring_j in descendents_past_offspring:
-                            lis.append(LisElement(k, offspring_i, offspring_j,"A"))
+                        for offspring_i, offspring_j in descendents_past_offspring:
+                            lis.append(LisElement(k,offspring_i,offspring_j,"A"))
                     else:
+                        # keep lis_element in the lis
                         lis_retain.append(lis_element)
 
             lis = lis_retain
 
-
             # refinement pass
-            print('refinement ', n)
-            assert pop() == 'refinement'
+            print('refinement')
 
-            # does all the old elements, not added this round
             for lsp_i in range(lsp_len):
                 k,i,j = lsp[lsp_i]
-                # either 0 or 1
                 bit = pop()
-
+                before= int(rec_arr[k,i,j])
                 if bit:
-                    sign = arr[k,i,j] >= 0
-                    if sign:
-                        arr[k,i,j] = np.bitwise_or(arr[k,i,j],np.int16(2**n))
-                    else:
-                        arr[k,i,j] = -np.bitwise_or(arr[k,i,j],np.int16(2**n))
+                    rec_arr[k,i,j] = np.bitwise_or(rec_arr[k,i,j],2**n)
                 else:
-                    arr[k,i,j] = np.bitwise_and(arr[k,i,j], np.bitwise_not(np.int16(2**n)))
+                    rec_arr[k,i,j] = np.bitwise_and(rec_arr[k,i,j], np.bitwise_not(np.uint32(2**n)))
+                print("n", n, "bit", bit)
+                print("before", before)
+                print("after", rec_arr[k,i,j])
+                if before >=0 and rec_arr[k,i,j] <  0 \
+                or before <0 and rec_arr[k,i,j] >=  0:
+                    import bpdb
+                    bpdb.set_trace()
 
             # quantization pass 
+            print(f'encoding quant pass n {n} kb:{curr_i["i"]/1000:.2f}')
             n -= 1
-
     except __EndDecoding:
         return ret()
 

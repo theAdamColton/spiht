@@ -17,13 +17,13 @@ class Tests(unittest.TestCase):
 
     def test_simple_encode(self):
         image = load_im("./images/lenna.png")
-        d, n, h, w = spiht_encode(image)
+        result = spiht_encode(image)
 
     def test_simple_encode_decode(self):
         image = load_im("./images/lenna.png")
-        d, n, h, w = spiht_encode(image)
+        result = spiht_encode(image)
         print("DECODING")
-        image_hat = spiht_decode(d, n, h, w)
-        imshow(scale_0_1(image_hat))
-        imshow(image_hat)
-
+        decoding_result = spiht_decode(result['encoded'], **result)
+        rec_image = decoding_result['rec_image']
+        imshow(scale_0_1(rec_image))
+        imshow(rec_image)
