@@ -5,7 +5,7 @@ from einops import reduce, rearrange
 
 def load_im(path) -> np.ndarray:
     im= np.asarray(Image.open(path))
-    return np.moveaxis(im, -1, 0)
+    return np.moveaxis(im, -1, 0) / 255
 
 def scale_0_1(x):
     x = rearrange(x, '... h w -> h w ...')
