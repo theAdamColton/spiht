@@ -86,10 +86,14 @@ def quantize(arr):
 def dequantize(arr):
     return arr / Q_SCALE
 
-def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=500000):
+def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=5000000):
     coeffs = wavedec2(image, mode='periodization', wavelet=wavelet, level=level)
     arr,slices = pywt.coeffs_to_array(coeffs, padding=None, axes=(-2,-1))
     arr = quantize(arr)
+
+    coeffs = pywt.array_to_coeffs(dequantize(arr),slices, output_format='wavedec2')
+    image = waverec2(coeffs, wavelet=wavelet, mode='periodization')
+
     c, h, w = arr.shape
 
     n = math.floor(math.log2(int(np.abs(arr).max())))
@@ -143,9 +147,6 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=500000):
                     append_to_out(arr[k,i,j]>=0)
                     lsp.append((k,i,j))
 
-                    #if i > (h // 2) or j > (w//2):
-                    #    import bpdb
-                    #    bpdb.set_trace()
                 else:
                     new_lip.append((k,i,j))
             lip = new_lip
@@ -170,10 +171,6 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=500000):
                             if is_element_sig:
                                 lsp.append((k,offspring_i,offspring_j))
 
-                                #if i > (h // 2) or j > (w//2):
-                                #    import bpdb
-                                #    bpdb.set_trace()
-
                                 append_to_out(arr[k,offspring_i,offspring_j] >= 0)
                             else:
                                 lip.append((k, offspring_i, offspring_j))
@@ -193,8 +190,6 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=500000):
                         descendents_past_offspring.extend(get_offspring(offspring_i,offspring_j,h,w,level))
 
                     is_l_significant = any(is_set_significant(arr,k,offspring_i,offspring_j,n,level) for (offspring_i,offspring_j) in descendents_past_offspring)
-                    #import bpdb
-                    #bpdb.set_trace()
                     append_to_out(is_l_significant)
                     if is_l_significant:
                         for offspring_i, offspring_j in get_offspring(i,j,h,w,level):
@@ -216,9 +211,9 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=500000):
             n -= 1
 
     except __EndEncoding:
-        return dict(encoded=out, n=max_n, c=c, h=h, w=w, arr=arr)
+        return dict(encoded=out, n=max_n, c=c, h=h, w=w, arr=arr, image=image)
 
-    return dict(encoded=out, n=max_n, c=c, h=h, w=w, arr=arr)
+    return dict(encoded=out, n=max_n, c=c, h=h, w=w, arr=arr, image=image)
 
 def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', level=7, **kwargs):
     rec_arr = np.zeros((c,h,w), np.int32)
@@ -299,7 +294,6 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', level=7, **kwargs):
                                 lsp.append((k,offspring_i,offspring_j))
                                 # either 1 or -1
                                 sign = pop() * 2 - 1
-                                assert sign != 1 or sign != -1
 
                                 rec_arr[k,offspring_i,offspring_j] = 1.5*2**n * sign
                             else:

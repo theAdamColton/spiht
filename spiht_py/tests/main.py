@@ -36,5 +36,12 @@ class Tests(unittest.TestCase):
         plt.close()
 
 
-        imshow(scale_0_1(rec_image))
-        imshow(rec_image)
+        f,ax = plt.subplots(2)
+        imshow(result['image'], ax=ax[0])
+        imshow(rec_image, ax=ax[1])
+        plt.show()
+        plt.close()
+
+        diff = np.abs(arr - rec_arr)
+        imshow(diff * 1000)
+        plt.show()
