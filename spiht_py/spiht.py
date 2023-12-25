@@ -86,7 +86,7 @@ def quantize(arr):
 def dequantize(arr):
     return arr / Q_SCALE
 
-def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=5000000):
+def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=9000000):
     coeffs = wavedec2(image, mode='periodization', wavelet=wavelet, level=level)
     arr,slices = pywt.coeffs_to_array(coeffs, padding=None, axes=(-2,-1))
     arr = quantize(arr)
@@ -323,11 +323,36 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', level=7, **kwargs):
 
             for lsp_i in range(lsp_len):
                 k,i,j = lsp[lsp_i]
+
+                before = rec_arr[k,i,j]
+
                 bit = pop()
                 if bit:
-                    rec_arr[k,i,j] = np.bitwise_or(rec_arr[k,i,j],2**n)
+                    rec_arr[k,i,j] = rec_arr[k,i,j] | 1<<n
                 else:
-                    rec_arr[k,i,j] = np.bitwise_and(rec_arr[k,i,j], np.bitwise_not(np.uint32(2**n)))
+                    sign = rec_arr[k,i,j] >= 0
+                    if sign:
+                        rec_arr[k,i,j] = rec_arr[k,i,j] & ~(1<<n)
+                    else:
+                        # I don't know how to unset the nth bit for negative numbers using python
+                        # without using this hacky solution
+                        rec_arr[k,i,j] = -((-rec_arr[k,i,j]) & ~(1<<n))
+
+
+                #print(n,k,i,j)
+                #print('before', before)
+                #after = rec_arr[k,i,j]
+                #print('after', after)
+                #actual = kwargs['arr'][k,i,j]
+                #print('actual', actual)
+
+                #if k==0 and i == 2 and j==6:
+                #    import bpdb
+                #    bpdb.set_trace()
+
+                #if n==0 and actual != after:
+                #    import bpdb
+                #    bpdb.set_trace()
 
             # quantization pass 
             print(f'encoding quant pass n {n} kb:{curr_i["i"]/1000:.2f}')
@@ -341,4 +366,45 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', level=7, **kwargs):
     coeffs = pywt.array_to_coeffs(dequantize(rec_arr), slices, output_format='wavedec2')
     rec_image = pywt.waverec2(coeffs, mode='periodization', wavelet=wavelet)
     return dict(rec_image=rec_image, coeffs=coeffs, rec_arr=rec_arr)
+
+
+def simple_spiht_encode(image, wavelet='bior4.4', level=7, max_bits=5000000):
+    """
+    Two phases, sort and refinement.
+
+    Initialize significant coeffs as empty
+
+    Sort:
+        BFS of yet to be marked significant coeffs
+
+        If a coeff is found to be significant
+    """
+
+    coeffs = wavedec2(image, mode='periodization', wavelet=wavelet, level=level)
+    arr,slices = pywt.coeffs_to_array(coeffs, padding=None, axes=(-2,-1))
+    arr = quantize(arr)
+
+    coeffs = pywt.array_to_coeffs(dequantize(arr),slices, output_format='wavedec2')
+    image = waverec2(coeffs, wavelet=wavelet, mode='periodization')
+
+    c, h, w = arr.shape
+
+    n = math.floor(math.log2(int(np.abs(arr).max())))
+    max_n = n
+
+
+    class __EndEncoding(Exception):
+        pass
+
+    
+    curr_i = dict(i=0)
+    out = [0] * max_bits
+    def append_to_out(*x):
+        i = curr_i['i']
+        for y in x:
+            if i >= max_bits:
+                raise __EndEncoding()
+            out[i] = y
+            i += 1
+        curr_i['i'] = i
 
