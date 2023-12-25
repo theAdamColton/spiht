@@ -1,8 +1,9 @@
 import unittest
 import numpy as np
 import matplotlib.pyplot as plt
+import pywt
 
-from ..spiht import spiht_encode, spiht_decode, get_offspring
+from ..spiht import spiht_encode, spiht_decode, get_offspring, dequantize, quantize
 from ..utils import load_im, imshow, scale_0_1
 
 class Tests(unittest.TestCase):
@@ -25,5 +26,15 @@ class Tests(unittest.TestCase):
         print("DECODING")
         decoding_result = spiht_decode(result['encoded'], **result)
         rec_image = decoding_result['rec_image']
+        arr=result['arr']
+        rec_arr=decoding_result['rec_arr']
+
+        f,ax = plt.subplots(2)
+        imshow(arr*1e10, ax=ax[0])
+        imshow(rec_arr*1e10, ax=ax[1])
+        plt.show()
+        plt.close()
+
+
         imshow(scale_0_1(rec_image))
         imshow(rec_image)

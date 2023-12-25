@@ -13,6 +13,12 @@ def is_bit_set(x, n):
 def is_element_significant(x, n):
     return np.abs(x) >= 2**n
 
+def has_descendents_past_offspring(i,j,h,w):
+    if 2*i + 1 >= h or 2*j + 1 >= w:
+        return False
+    else:
+        return True
+
 def get_offspring(i,j,h,w,level):
     ll_h = h // 2 ** level
     ll_w = w // 2 ** level
@@ -21,6 +27,7 @@ def get_offspring(i,j,h,w,level):
         if i%2 == 0 and j%2 == 0:
             return []
         # index relative to the top left chunk corner
+        # can be (0,0), (0,2), (2,0), (2,2)
         sub_child_i, sub_child_j = i // 2 * 2, j//2 * 2
         # can be (0,1), (1,0) or (1,1)
         chunk_i, chunk_j = i%2, j%2
@@ -31,8 +38,9 @@ def get_offspring(i,j,h,w,level):
                 (chunk_i * ll_h + sub_child_i + 1, chunk_j * ll_w + sub_child_j + 1),
                 ]
 
-    if 2*i >= h or 2*j >= w:
+    if 2*i+1 >= h or 2*j+1 >= w:
         return []
+
     return [
             (2*i,2*j), 
             (2*i, 2*j+1),
@@ -40,12 +48,12 @@ def get_offspring(i,j,h,w,level):
             (2*i+1, 2*j+1),
         ]
 
-def paint_offspring(i,j,h,w,level,out=None):
+def paint_descendents(i,j,h,w,level,out=None):
     if out is None:
         out = np.zeros((h,w))
     out[i,j] = out[i,j] + 1
     for k,l in get_offspring(i,j,h,w,level):
-        paint_offspring(k,l,h,w,level,out)
+        paint_descendents(k,l,h,w,level,out)
     return out
 
 def are_descendents_significant(arr, k, i, j, n, level):
@@ -78,7 +86,7 @@ def quantize(arr):
 def dequantize(arr):
     return arr / Q_SCALE
 
-def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=200000):
+def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=500000):
     coeffs = wavedec2(image, mode='periodization', wavelet=wavelet, level=level)
     arr,slices = pywt.coeffs_to_array(coeffs, padding=None, axes=(-2,-1))
     arr = quantize(arr)
@@ -118,11 +126,6 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=200000):
                 lip.append((k,i,j,))
     lsp= []
 
-    #arr = dequantize(arr)
-    #rec_coeffs = pywt.array_to_coeffs(arr, slices, output_format='wavedec2')
-    #rec_image = pywt.waverec2(rec_coeffs, mode='periodization', wavelet=wavelet)
-    #import bpdb
-    #bpdb.set_trace()
 
     try:
         while n >=0:
@@ -139,6 +142,10 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=200000):
                 if is_element_sig:
                     append_to_out(arr[k,i,j]>=0)
                     lsp.append((k,i,j))
+
+                    #if i > (h // 2) or j > (w//2):
+                    #    import bpdb
+                    #    bpdb.set_trace()
                 else:
                     new_lip.append((k,i,j))
             lip = new_lip
@@ -162,12 +169,17 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=200000):
 
                             if is_element_sig:
                                 lsp.append((k,offspring_i,offspring_j))
+
+                                #if i > (h // 2) or j > (w//2):
+                                #    import bpdb
+                                #    bpdb.set_trace()
+
                                 append_to_out(arr[k,offspring_i,offspring_j] >= 0)
                             else:
                                 lip.append((k, offspring_i, offspring_j))
 
-                        has_descendents_past_offspring = i * 4 < h and j * 4 < w
-                        if has_descendents_past_offspring:
+                        l_exists = has_descendents_past_offspring(i,j,h,w)
+                        if l_exists:
                             lis.append(LisElement(k,i,j,"B"))
                     else:
                         # keep lis_element in the lis
@@ -175,11 +187,17 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=200000):
                                 
                 else:
                     # type B
-                    descendents_past_offspring = sum([get_offspring(offspring_i,offspring_j,h,w,level) for (offspring_i,offspring_j) in get_offspring(i,j,h,w,level)], [])
-                    is_l_significant = any(are_descendents_significant(arr,k,offspring_i,offspring_j,n,level) for (offspring_i,offspring_j) in descendents_past_offspring)
+                    offspring = get_offspring(i,j,h,w,level)
+                    descendents_past_offspring = []
+                    for offspring_i, offspring_j in offspring:
+                        descendents_past_offspring.extend(get_offspring(offspring_i,offspring_j,h,w,level))
+
+                    is_l_significant = any(is_set_significant(arr,k,offspring_i,offspring_j,n,level) for (offspring_i,offspring_j) in descendents_past_offspring)
+                    #import bpdb
+                    #bpdb.set_trace()
                     append_to_out(is_l_significant)
                     if is_l_significant:
-                        for offspring_i, offspring_j in descendents_past_offspring:
+                        for offspring_i, offspring_j in get_offspring(i,j,h,w,level):
                             lis.append(LisElement(k,offspring_i,offspring_j,"A"))
                     else:
                         # keep lis_element in the lis
@@ -210,10 +228,6 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', level=7, **kwargs):
     dummy_coeffs = wavedec2(dummy_image, mode='periodization', wavelet=wavelet, level=level)
     _, slices = pywt.coeffs_to_array(dummy_coeffs, padding=None, axes=(-2,-1))
 
-    def ret():
-        coeffs = pywt.array_to_coeffs(dequantize(rec_arr), slices, output_format='wavedec2')
-        rec_image = pywt.waverec2(coeffs, mode='periodization', wavelet=wavelet)
-        return dict(rec_image=rec_image, coeffs=coeffs, rec_arr=rec_arr)
 
 
     class __EndDecoding(Exception):
@@ -243,6 +257,7 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', level=7, **kwargs):
             for k in range(c):
                 lip.append((k,i,j,))
     lsp= []
+
 
     try:
         while n >= 0:
@@ -284,13 +299,14 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', level=7, **kwargs):
                                 lsp.append((k,offspring_i,offspring_j))
                                 # either 1 or -1
                                 sign = pop() * 2 - 1
+                                assert sign != 1 or sign != -1
 
                                 rec_arr[k,offspring_i,offspring_j] = 1.5*2**n * sign
                             else:
                                 lip.append((k, offspring_i, offspring_j))
 
-                        has_descendents_past_offspring = i * 4 < h and j * 4 < w
-                        if has_descendents_past_offspring:
+                        l_exists = has_descendents_past_offspring(i,j,h,w)
+                        if l_exists:
                             lis.append(LisElement(k,i,j,"B"))
                     else:
                         # keep lis_element in the lis
@@ -298,10 +314,9 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', level=7, **kwargs):
                                 
                 else:
                     # type B
-                    descendents_past_offspring = sum([get_offspring(offspring_i,offspring_j,h,w,level) for (offspring_i,offspring_j) in get_offspring(i,j,h,w,level)], [])
                     is_l_significant = pop()
                     if is_l_significant:
-                        for offspring_i, offspring_j in descendents_past_offspring:
+                        for offspring_i, offspring_j in get_offspring(i,j,h,w,level):
                             lis.append(LisElement(k,offspring_i,offspring_j,"A"))
                     else:
                         # keep lis_element in the lis
@@ -315,24 +330,21 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', level=7, **kwargs):
             for lsp_i in range(lsp_len):
                 k,i,j = lsp[lsp_i]
                 bit = pop()
-                before= int(rec_arr[k,i,j])
                 if bit:
                     rec_arr[k,i,j] = np.bitwise_or(rec_arr[k,i,j],2**n)
                 else:
                     rec_arr[k,i,j] = np.bitwise_and(rec_arr[k,i,j], np.bitwise_not(np.uint32(2**n)))
-                print("n", n, "bit", bit)
-                print("before", before)
-                print("after", rec_arr[k,i,j])
-                if before >=0 and rec_arr[k,i,j] <  0 \
-                or before <0 and rec_arr[k,i,j] >=  0:
-                    import bpdb
-                    bpdb.set_trace()
 
             # quantization pass 
             print(f'encoding quant pass n {n} kb:{curr_i["i"]/1000:.2f}')
             n -= 1
     except __EndDecoding:
-        return ret()
+        coeffs = pywt.array_to_coeffs(dequantize(rec_arr), slices, output_format='wavedec2')
+        rec_image = pywt.waverec2(coeffs, mode='periodization', wavelet=wavelet)
+        return dict(rec_image=rec_image, coeffs=coeffs, rec_arr=rec_arr)
 
-    return ret()
+
+    coeffs = pywt.array_to_coeffs(dequantize(rec_arr), slices, output_format='wavedec2')
+    rec_image = pywt.waverec2(coeffs, mode='periodization', wavelet=wavelet)
+    return dict(rec_image=rec_image, coeffs=coeffs, rec_arr=rec_arr)
 
