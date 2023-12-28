@@ -411,7 +411,12 @@ def simple_spiht_encode(image, wavelet='bior4.4', level=7, max_bits=5000000):
                 _is_already_sig = sig[k,i,j]
 
                 append_to_out(f'is already sig {_is_already_sig}')
-                _is_currently_sig = cur_sig[k,i,j]
+
+                #_is_currently_sig = cur_sig[k,i,j]
+                if _is_already_sig:
+                    _is_currently_sig = True
+                else:
+                    _is_currently_sig = is_set_significant(arr, k, i, j, n, level)
                 _newly_sig = not _is_already_sig and _is_currently_sig
 
                 if not _is_already_sig: 
@@ -430,10 +435,14 @@ def simple_spiht_encode(image, wavelet='bior4.4', level=7, max_bits=5000000):
 
                 # if newly_significant, gives sign bit
                 if _newly_sig:
-                    sign = arr[k,i,j] >= 0
-                    sig[k,i,j] = True
-                    append_to_out('sign')
-                    append_to_out(sign)
+                    # outputs bit indicating if this particular element is sig
+                    append_to_out(cur_sig[k,i,j])
+
+                    if cur_sig[k,i,j]:
+                        sign = arr[k,i,j] >= 0
+                        sig[k,i,j] = True
+                        append_to_out('sign')
+                        append_to_out(sign)
 
                 # if it was already significant, gives refinement bit
                 if _is_already_sig:
@@ -441,7 +450,7 @@ def simple_spiht_encode(image, wavelet='bior4.4', level=7, max_bits=5000000):
                     append_to_out('refinement')
                     append_to_out(bit)
 
-            print(f'encoding pass n {n} kb:{curr_i["i"]/1000:.2f}')
+            print(f'encoding pass n {n} kb:{(curr_i["i"]/ 8) /1024:.2f}')
             n-=1
 
     except __EndEncoding:
@@ -472,9 +481,7 @@ def simple_spiht_decode(d,n,h,w,c=3,wavelet='bior4.4',level=7, **kwargs):
             print("END DECODING")
             raise __EndDecoding()
         curr_i['i'] = i + 1
-        x= d[curr_i['i']]
-        print(x)
-        return x
+        return d[curr_i['i']]
 
     sig = np.zeros((c,h,w), dtype=np.bool_)
 
@@ -523,23 +530,32 @@ def simple_spiht_decode(d,n,h,w,c=3,wavelet='bior4.4',level=7, **kwargs):
 
                 # if newly_significant, gets sign bit
                 if _newly_sig:
-                    sig[k,i,j] = True
-                    assert pop() == 'sign'
-                    sign = pop()
-                    sign = 2 * sign - 1
-                    rec_arr[k,i,j] = sign * 1.5 * 2 ** n
+                    sig[k,i,j] = pop()
+
+                    if sig[k,i,j]:
+                        assert pop() == 'sign'
+                        sign = pop()
+                        sign = 2 * sign - 1
+                        rec_arr[k,i,j] = sign * 1.5 * 2 ** n
 
                 # if oldly significant, gets refinement bit
                 if _is_oldly_sig:
                     assert pop() == 'refinement'
                     bit=pop()
 
+                    before = rec_arr[k,i,j]
+
+                    sign = rec_arr[k,i,j] >= 0
+
                     if bit:
-                        # sets bit
-                        rec_arr[k,i,j] = rec_arr[k,i,j] | 1<<n
+                        if sign:
+                            # sets bit
+                            rec_arr[k,i,j] = rec_arr[k,i,j] | 1<<n
+                        else:
+                            # don't know how to do this without flipping the sign bit first
+                            rec_arr[k,i,j] = -((-rec_arr[k,i,j]) | 1<<n)
                     else:
                         # unsets bit
-                        sign = rec_arr[k,i,j] >= 0
                         if sign:
                             rec_arr[k,i,j] = rec_arr[k,i,j] & ~(1<<n)
                         else:
@@ -547,8 +563,17 @@ def simple_spiht_decode(d,n,h,w,c=3,wavelet='bior4.4',level=7, **kwargs):
                             # negative numbers using python
                             # without using this hacky solution
                             rec_arr[k,i,j] = -((-rec_arr[k,i,j]) & ~(1<<n))
-                    
-            print(f'decoding pass n {n} kb:{curr_i["i"]/1000:.2f}')
+
+                    after = rec_arr[k,i,j]
+
+                    arr = kwargs['arr']
+                    gnd = arr[k,i,j]
+                    print(before, after, gnd)
+
+                    gnd_is_set= is_bit_set(arr[k,i,j], n)
+                    assert is_bit_set(rec_arr[k,i,j],n) == gnd_is_set
+
+            print(f'decoding pass n {n} kb:{(curr_i["i"]/8)/1024:.2f}')
             n-=1
 
     except __EndDecoding:
@@ -559,4 +584,5 @@ def simple_spiht_decode(d,n,h,w,c=3,wavelet='bior4.4',level=7, **kwargs):
 
     coeffs = pywt.array_to_coeffs(dequantize(rec_arr), slices, output_format='wavedec2')
     rec_image = pywt.waverec2(coeffs, mode='periodization', wavelet=wavelet)
+
     return dict(rec_image=rec_image, coeffs=coeffs, rec_arr=rec_arr)
