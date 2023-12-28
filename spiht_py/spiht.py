@@ -338,22 +338,6 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', level=7, **kwargs):
                         # without using this hacky solution
                         rec_arr[k,i,j] = -((-rec_arr[k,i,j]) & ~(1<<n))
 
-
-                #print(n,k,i,j)
-                #print('before', before)
-                #after = rec_arr[k,i,j]
-                #print('after', after)
-                #actual = kwargs['arr'][k,i,j]
-                #print('actual', actual)
-
-                #if k==0 and i == 2 and j==6:
-                #    import bpdb
-                #    bpdb.set_trace()
-
-                #if n==0 and actual != after:
-                #    import bpdb
-                #    bpdb.set_trace()
-
             # quantization pass 
             print(f'encoding quant pass n {n} kb:{curr_i["i"]/1000:.2f}')
             n -= 1
@@ -368,6 +352,7 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', level=7, **kwargs):
     return dict(rec_image=rec_image, coeffs=coeffs, rec_arr=rec_arr)
 
 
+
 def simple_spiht_encode(image, wavelet='bior4.4', level=7, max_bits=5000000):
     """
     Two phases, sort and refinement.
@@ -376,22 +361,18 @@ def simple_spiht_encode(image, wavelet='bior4.4', level=7, max_bits=5000000):
 
     Sort:
         BFS of yet to be marked significant coeffs
-
-        If a coeff is found to be significant
     """
 
     coeffs = wavedec2(image, mode='periodization', wavelet=wavelet, level=level)
     arr,slices = pywt.coeffs_to_array(coeffs, padding=None, axes=(-2,-1))
+    c, h, w = arr.shape
+    ll_h = slices[0][1].stop
+    ll_w = slices[0][2].stop
+    
     arr = quantize(arr)
 
     coeffs = pywt.array_to_coeffs(dequantize(arr),slices, output_format='wavedec2')
     image = waverec2(coeffs, wavelet=wavelet, mode='periodization')
-
-    c, h, w = arr.shape
-
-    n = math.floor(math.log2(int(np.abs(arr).max())))
-    max_n = n
-
 
     class __EndEncoding(Exception):
         pass
@@ -408,3 +389,174 @@ def simple_spiht_encode(image, wavelet='bior4.4', level=7, max_bits=5000000):
             i += 1
         curr_i['i'] = i
 
+    n = math.floor(math.log2(int(np.abs(arr).max())))
+    max_n = n
+    sig = np.zeros((c,h,w), dtype=np.bool_)
+
+    try:
+        while n >= 0:
+            cur_sig = is_element_significant(arr, n)
+
+            # Sort phase, BFS
+            queue = []
+            for k in range(c):
+                for i in range(ll_h):
+                    for j in range(ll_w):
+                        queue.append((k,i,j))
+
+            while len(queue) > 0:
+                k,i,j = queue.pop(0)
+                append_to_out(f'popped from queue {k} {i} {j}')
+
+                _is_already_sig = sig[k,i,j]
+
+                append_to_out(f'is already sig {_is_already_sig}')
+                _is_currently_sig = cur_sig[k,i,j]
+                _newly_sig = not _is_already_sig and _is_currently_sig
+
+                if not _is_already_sig: 
+                    append_to_out(f'{k} {i} {j}')
+                    append_to_out(_is_currently_sig)
+
+                if _newly_sig:
+                    append_to_out(f'newly_significant{k}{i}{j}')
+
+                if _is_currently_sig:
+                    # adds to search queue
+                    offspring = get_offspring(i,j,h,w,level)
+                    for l,m in offspring:
+                        append_to_out(f'appending to queue {k} {l} {m}')
+                        queue.append((k,l,m))
+
+                # if newly_significant, gives sign bit
+                if _newly_sig:
+                    sign = arr[k,i,j] >= 0
+                    sig[k,i,j] = True
+                    append_to_out('sign')
+                    append_to_out(sign)
+
+                # if it was already significant, gives refinement bit
+                if _is_already_sig:
+                    bit= is_bit_set(arr[k,i,j], n)
+                    append_to_out('refinement')
+                    append_to_out(bit)
+
+            print(f'encoding pass n {n} kb:{curr_i["i"]/1000:.2f}')
+            n-=1
+
+    except __EndEncoding:
+        return dict(encoded=out, n=max_n, c=c, h=h, w=w, arr=arr, image=image)
+
+    return dict(encoded=out, n=max_n, c=c, h=h, w=w, arr=arr, image=image)
+
+def simple_spiht_decode(d,n,h,w,c=3,wavelet='bior4.4',level=7, **kwargs):
+
+    rec_arr = np.zeros((c,h,w), dtype=np.int32)
+
+    # does this just to get the coeff slices
+    dummy_image = rec_arr
+    dummy_coeffs = wavedec2(dummy_image, mode='periodization', wavelet=wavelet, level=level)
+    _, slices = pywt.coeffs_to_array(dummy_coeffs, padding=None, axes=(-2,-1))
+    ll_h = slices[0][1].stop
+    ll_w = slices[0][2].stop
+    
+
+    class __EndDecoding(Exception):
+        pass
+
+    
+    curr_i = dict(i=-1)
+    def pop():
+        i = curr_i['i']
+        if i+1 >= len(d):
+            print("END DECODING")
+            raise __EndDecoding()
+        curr_i['i'] = i + 1
+        x= d[curr_i['i']]
+        print(x)
+        return x
+
+    sig = np.zeros((c,h,w), dtype=np.bool_)
+
+    try:
+        while n >= 0:
+            queue = []
+            for k in range(c):
+                for i in range(ll_h):
+                    for j in range(ll_w):
+                        queue.append((k,i,j))
+
+            while len(queue) > 0:
+                k,i,j = queue.pop(0)
+                assert pop() == f'popped from queue {k} {i} {j}'
+
+                _is_already_sig = sig[k,i,j]
+
+                assert pop() == f'is already sig {_is_already_sig}', _is_already_sig
+
+                if not _is_already_sig:
+                    s = f'{k} {i} {j}'
+                    x = pop()
+                    if x != s:
+                        import bpdb
+                        bpdb.set_trace()
+
+                    _is_sig = pop()
+                else:
+                    _is_sig = True # which is _is_already_sig
+
+                _newly_sig = _is_sig and not _is_already_sig
+                _is_oldly_sig = _is_already_sig
+
+                if _newly_sig:
+                    x = pop()
+                    if not x == f'newly_significant{k}{i}{j}':
+                        import bpdb
+                        bpdb.set_trace()
+
+                if _is_sig:
+                    # adds to search queue
+                    offspring = get_offspring(i,j,h,w,level)
+                    for l,m in offspring:
+                        assert pop() == f'appending to queue {k} {l} {m}'
+                        queue.append((k,l,m))
+
+                # if newly_significant, gets sign bit
+                if _newly_sig:
+                    sig[k,i,j] = True
+                    assert pop() == 'sign'
+                    sign = pop()
+                    sign = 2 * sign - 1
+                    rec_arr[k,i,j] = sign * 1.5 * 2 ** n
+
+                # if oldly significant, gets refinement bit
+                if _is_oldly_sig:
+                    assert pop() == 'refinement'
+                    bit=pop()
+
+                    if bit:
+                        # sets bit
+                        rec_arr[k,i,j] = rec_arr[k,i,j] | 1<<n
+                    else:
+                        # unsets bit
+                        sign = rec_arr[k,i,j] >= 0
+                        if sign:
+                            rec_arr[k,i,j] = rec_arr[k,i,j] & ~(1<<n)
+                        else:
+                            # I don't know how to unset the nth bit for
+                            # negative numbers using python
+                            # without using this hacky solution
+                            rec_arr[k,i,j] = -((-rec_arr[k,i,j]) & ~(1<<n))
+                    
+            print(f'decoding pass n {n} kb:{curr_i["i"]/1000:.2f}')
+            n-=1
+
+    except __EndDecoding:
+        coeffs = pywt.array_to_coeffs(dequantize(rec_arr), slices, output_format='wavedec2')
+        rec_image = pywt.waverec2(coeffs, mode='periodization', wavelet=wavelet)
+        return dict(rec_image=rec_image, coeffs=coeffs, rec_arr=rec_arr)
+
+
+    coeffs = pywt.array_to_coeffs(dequantize(rec_arr), slices, output_format='wavedec2')
+    rec_image = pywt.waverec2(coeffs, mode='periodization', wavelet=wavelet)
+    return dict(rec_image=rec_image, coeffs=coeffs, rec_arr=rec_arr)
