@@ -29,6 +29,7 @@ fn is_bit_set(x: i32, n: u8) -> bool
 
 fn is_element_sig(x: i32, n: u8)  -> bool
 {
+    debug_assert!(n < 32);
     x.abs() >= (1i32 <<n)
 }
 
@@ -76,8 +77,8 @@ fn is_set_sig(arr: ArrayView3<i32>,k: usize,i: usize,j:usize,n:u8, ll_h: usize, 
         return true
     }
 
-    for (i,j) in get_offspring(i,j,h,w, ll_h, ll_w) {
-        if is_set_sig(arr,k,i,j,n,ll_h, ll_w) {
+    for (l,m) in get_offspring(i,j,h,w, ll_h, ll_w) {
+        if is_set_sig(arr,k,l,m,n,ll_h, ll_w) {
             return true
         }
     }
@@ -118,7 +119,7 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
         while let Some((k,i,j)) = queue.pop_front() {
             let x = arr[(k,i,j)];
 
-            let is_already_sig:bool = sig_sets[(k,i,j)] == 1;
+            let is_already_sig = sig_sets[(k,i,j)] == 1;
 
             let is_currently_sig: bool;
             if is_already_sig {
@@ -190,12 +191,15 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
 
     let mut cur_i = 0;
 
-    let pop_front = || {
+    let mut pop_front = || {
+        let ret: Option<bool>;
         if cur_i >= data.len() {
-            return None
+            ret = None
         } else {
-            return Some(data[cur_i]);
+            ret = Some(data[cur_i]);
         }
+        cur_i += 1;
+        return ret
     };
 
     loop {
@@ -313,8 +317,22 @@ mod tests {
     }
 
     #[test]
+    fn simple_test_encode_decode() {
+        let ll_h = 2;
+        let ll_w = 2;
+        let h = 16;
+        let w = 16;
+        let c = 1;
+        let arr: Array3<i32> = Array3::ones((c,h,w)) * 32;
+        let (data, max_n) = encode(arr.view(), ll_h, ll_w, 10000);
+        let rec_data = decode(data, max_n, c, h, w, ll_h, ll_w);
+        assert_eq!(arr, rec_data);
+    }
+
+    #[test]
     fn test_base_sig() {
         assert_eq!((1<<5) + (1<<6), 96);
+        assert_eq!((1<<4) + (1<<5), 48)
     }
 
     #[test]
