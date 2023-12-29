@@ -71,8 +71,8 @@ def is_set_significant(arr,k,i,j,n, level):
     if is_element_significant(arr[k,i,j], n):
         return True
 
-    for i,j in get_offspring(i,j,h,w, level):
-        if is_set_significant(arr,k,i,j,n,level):
+    for l,m in get_offspring(i,j,h,w, level):
+        if is_set_significant(arr,k,l,m,n,level):
             return True
 
     return False
@@ -200,14 +200,14 @@ def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=9000000):
 
             lis = lis_retain
 
-            print('refinement')
+            #print('refinement')
             for lsp_i in range(lsp_len):
                 k,i,j = lsp[lsp_i]
                 bit = is_bit_set(arr[k,i,j], n)
                 append_to_out(bit)
 
             # quantization pass 
-            print(f'encoding quant pass n {n} kb:{curr_i["i"]/1000:.2f}')
+            #print(f'encoding quant pass n {n} kb:{curr_i["i"]/1000:.2f}')
             n -= 1
 
     except __EndEncoding:
@@ -232,7 +232,7 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', level=7, **kwargs):
     def pop():
         i = curr_i['i']
         if i+1 >= len(d):
-            print("END DECODING")
+            #print("END DECODING")
             raise __EndDecoding()
         curr_i['i'] = i + 1
         return d[curr_i['i']]
@@ -377,17 +377,12 @@ def simple_spiht_encode(image, wavelet='bior4.4', level=7, max_bits=5000000):
     class __EndEncoding(Exception):
         pass
 
-    
-    curr_i = dict(i=0)
-    out = [0] * max_bits
+    out = []
     def append_to_out(*x):
-        i = curr_i['i']
         for y in x:
-            if i >= max_bits:
+            if len(out) >= max_bits:
                 raise __EndEncoding()
-            out[i] = y
-            i += 1
-        curr_i['i'] = i
+            out.append(y)
 
     n = math.floor(math.log2(int(np.abs(arr).max())))
     max_n = n
@@ -450,7 +445,7 @@ def simple_spiht_encode(image, wavelet='bior4.4', level=7, max_bits=5000000):
                     append_to_out('refinement')
                     append_to_out(bit)
 
-            print(f'encoding pass n {n} kb:{(curr_i["i"]/ 8) /1024:.2f}')
+            print(f'encoding pass n {n} kb:{(len(out)/ 8) /1024:.2f}')
             n-=1
 
     except __EndEncoding:
@@ -568,7 +563,7 @@ def simple_spiht_decode(d,n,h,w,c=3,wavelet='bior4.4',level=7, **kwargs):
 
                     arr = kwargs['arr']
                     gnd = arr[k,i,j]
-                    print(before, after, gnd)
+                    #print(before, after, gnd)
 
                     gnd_is_set= is_bit_set(arr[k,i,j], n)
                     assert is_bit_set(rec_arr[k,i,j],n) == gnd_is_set

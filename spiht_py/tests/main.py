@@ -49,7 +49,7 @@ class Tests(unittest.TestCase):
 
     def test_simple_encode_decode(self):
         image = load_im("./images/zebra.jpg")
-        result = simple_spiht_encode(image)
+        result = simple_spiht_encode(image, max_bits=99999999999999)
         print("DECODING")
         decoding_result = simple_spiht_decode(result['encoded'], **result)
         rec_image = decoding_result['rec_image']

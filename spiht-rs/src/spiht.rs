@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 
-use ndarray::{ArrayView3, Array3};
+use ndarray::{ArrayView3, Array3, Array};
+use ndarray_rand::rand::thread_rng;
+use ndarray_rand::rand_distr::{Uniform, Normal};
 use ndarray_stats::QuantileExt;
 use bitvec::{bitvec, BitArr, vec::BitVec};
 
@@ -23,7 +25,7 @@ fn set_bit(x: i32, n: u8, bit: bool) -> i32 {
 
 fn is_bit_set(x: i32, n: u8) -> bool
 {
-    x & (1 << n) != 0
+    (x.abs() & (1 << n)) != 0
 }
 
 
@@ -114,7 +116,7 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
             }
         }
 
-        println!("encoding, n = {}, {}kb", n, (data.len() / 8) / 1024);
+        //println!("encoding, n = {}, {}kb", n, (data.len() / 8) / 1024);
 
         while let Some((k,i,j)) = queue.pop_front() {
             let x = arr[(k,i,j)];
@@ -128,10 +130,6 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
                 is_currently_sig = is_set_sig(arr,k,i,j,n,ll_h, ll_w);
             }
 
-            let is_newly_sig = !is_already_sig && is_currently_sig;
-
-            //println!("n{} {} {} {} is_already_sig {} is_currently_sig {} is_newly_sig {}",n, k,i,j,is_already_sig, is_currently_sig, is_newly_sig);
-
             if !is_already_sig {
                 data.push(is_currently_sig);
 
@@ -139,6 +137,11 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
                     return (data, max_n)
                 }
             }
+
+            let is_newly_sig = !is_already_sig && is_currently_sig;
+
+            println!("n{} x{} {} {} {} is_already_sig {} is_currently_sig {} is_newly_sig {} is_bit_set {}",n, x, k,i,j,is_already_sig, is_currently_sig, is_newly_sig, is_bit_set(x, n));
+
 
             if is_currently_sig {
                 let offspring = get_offspring(i,j,h,w,ll_h,ll_w);
@@ -149,7 +152,6 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
             }
 
             if is_newly_sig {
-                sig_sets[(k,i,j)] = 1;
 
                 let element_sig = is_element_sig(x, n);
 
@@ -158,11 +160,15 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
                     return (data, max_n)
                 }
 
-                let sign = x >= 0;
+                if element_sig {
+                    sig_sets[(k,i,j)] = 1;
 
-                data.push(sign);
-                if data.len() == max_bits {
-                    return (data, max_n)
+                    let sign = x >= 0;
+
+                    data.push(sign);
+                    if data.len() == max_bits {
+                        return (data, max_n)
+                    }
                 }
             }
 
@@ -187,7 +193,7 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
 pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize, ll_w: usize) -> Array3<i32> {
     let mut rec_arr = Array3::<i32>::zeros((c,h,w));
 
-    let mut sig_sets = Array3::<u8>::zeros((c, h, w));
+    let mut sig_pixels = Array3::<u8>::zeros((c, h, w));
 
     let mut cur_i = 0;
 
@@ -213,10 +219,10 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
             }
         }
 
-        println!("encoding, n = {}, {}kb", n, (data.len() / 8) / 1024);
+        //println!("encoding, n = {}, {}kb", n, (data.len() / 8) / 1024);
 
         while let Some((k,i,j)) = queue.pop_front() {
-            let is_already_sig:bool = sig_sets[(k,i,j)] == 1;
+            let is_already_sig:bool = sig_pixels[(k,i,j)] == 1;
 
             let is_currently_sig: bool;
             if is_already_sig {
@@ -231,7 +237,7 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
 
             let is_newly_sig = !is_already_sig && is_currently_sig;
 
-            //println!("n{} {} {} {} is_already_sig {} is_currently_sig {} is_newly_sig {}",n, k,i,j,is_already_sig, is_currently_sig, is_newly_sig);
+            println!("n{} {} {} {} is_already_sig {} is_currently_sig {} is_newly_sig {}",n, k,i,j,is_already_sig, is_currently_sig, is_newly_sig);
             //
 
             if is_currently_sig {
@@ -243,7 +249,6 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
             }
 
             if is_newly_sig {
-                sig_sets[(k,i,j)] = 1;
                 
                 let element_sig: bool;
                 if let Some(x) = pop_front() {
@@ -253,16 +258,25 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
                 }
 
                 if element_sig {
+                    sig_pixels[(k,i,j)] = 1;
+
                     let sign: i32;
                     if let Some(x) = pop_front() {
                         // 1 or -1
                         sign = x as i32 * 2 - 1;
+                        println!("{}", sign);
                     } else {
                         return rec_arr;
                     }
 
-                    // should be eq to 1.5 * 2 ^ n
-                    let base_sig = (1 << (n-1)) + (1<<n);
+                    let base_sig: i32;
+                    if n==0 {
+                        base_sig = 1<<n;
+                    } else {
+                        // should be eq to 1.5 * 2 ^ n
+                        base_sig = (1 << (n-1)) + (1<<n);
+                    }
+                    println!("initializing {} {} {} to {}", k,i,j, sign*base_sig);
                     rec_arr[(k,i,j)] = sign * base_sig;
                 }
             }
@@ -275,7 +289,11 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
                     return rec_arr
                 }
 
+                println!("b4 {}", rec_arr[(k,i,j)]);
+
                 rec_arr[(k,i,j)] = set_bit(rec_arr[(k,i,j)], n, bit);
+
+                println!("after set bit {} {} {}",n,bit, rec_arr[(k,i,j)]);
             }
         } 
 
@@ -291,6 +309,8 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
 
 #[cfg(test)]
 mod tests {
+    use ndarray_rand::{RandomExt, rand::{rngs::SmallRng, SeedableRng, Rng}};
+
     use super::*;
     #[test]
     fn test_is_bit_set() {
@@ -300,6 +320,8 @@ mod tests {
         assert_eq!(is_bit_set(32, 2), false);
         assert_eq!(is_bit_set(32, 1), false);
         assert_eq!(is_bit_set(32, 0), false);
+        println!("{:08b}", -69i32 & (1<<6 as i32));
+        assert!(is_bit_set(-69, 6));
         assert_eq!(is_bit_set(3590854, 8), false);
     }
 
@@ -330,6 +352,45 @@ mod tests {
     }
 
     #[test]
+    fn simple_test_encode_decode_w_negative() {
+        let ll_h = 2;
+        let ll_w = 2;
+        let h = 16;
+        let w = 16;
+        let c = 1;
+        let mut arr: Array3<i32> = Array3::ones((c,h,w)) * 32;
+        for k in 0..c {
+            for i in 0..h {
+                for j in 0..w {
+                    let sign = (i%2 != 0) as i32 * 2 - 1;
+                    arr[(k,i,j)] *= sign;
+                }
+            }
+        }
+        let (data, max_n) = encode(arr.view(), ll_h, ll_w, 10000);
+        let rec_data = decode(data, max_n, c, h, w, ll_h, ll_w);
+        assert_eq!(arr, rec_data);
+    }
+
+    #[test]
+    fn test_encode_decode_many_random() {
+        let rng = &mut SmallRng::seed_from_u64(42);
+
+        let ll_h = 2;
+        let ll_w = 2;
+        let h = 8;
+        let w = 8;
+        let c = 1;
+        for _ in 0..10 {
+            let arrf = Array3::random_using((c,h,w), Normal::new(0.,16.).unwrap(), rng);
+            let arr = arrf.mapv(|x| x as i32);
+            let (data, max_n) = encode(arr.view(), ll_h, ll_w, 10000000);
+            let rec_data = decode(data, max_n, c, h, w, ll_h, ll_w);
+            assert_eq!(arr, rec_data);
+        }
+    }
+
+    #[test]
     fn test_base_sig() {
         assert_eq!((1<<5) + (1<<6), 96);
         assert_eq!((1<<4) + (1<<5), 48)
@@ -342,5 +403,29 @@ mod tests {
         assert_eq!(set_bit(-64, 5, true), -96);
         assert_eq!(set_bit(96, 5, true), 96);
         assert_eq!(set_bit(96, 5, false), 64);
+    }
+
+    #[test]
+    fn test_is_element_sig() {
+        // 2^6 == 64
+        assert_eq!(is_element_sig(-21, 6), false);
+        assert_eq!(is_element_sig(-64, 6), true);
+        assert_eq!(is_element_sig(64, 6), true);
+        assert_eq!(is_element_sig(55, 6), false);
+    }
+
+    #[test]
+    fn test_set_bit_doesnt_change_sign() {
+        let mut rng = SmallRng::seed_from_u64(420);
+        for _ in 0..420 {
+            let x:i32 = rng.gen();
+            let sign = x >= 0;
+            let n:u8 = rng.gen_range(0..16);
+            let bit: bool = rng.gen_bool(0.5);
+            let y = set_bit(x, n, bit);
+            let sign_y = y >= 0;
+            assert_eq!(sign, sign_y);
+            assert_eq!(is_bit_set(y, n), bit);
+        }
     }
 }

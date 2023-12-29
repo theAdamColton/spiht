@@ -13,5 +13,6 @@ numpy = { version = "0.20.0" }
 ndarray = "0.15.6"
 bitvec = "1.0.1"
 ndarray-stats = "0.5.1"
+ndarray-rand = "0.14.0"
 
 [workspace]
