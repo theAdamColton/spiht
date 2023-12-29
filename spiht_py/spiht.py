@@ -79,12 +79,11 @@ def is_set_significant(arr,k,i,j,n, level):
 
 LisElement = namedtuple("LisElement", ['c', 'i', 'j', 'type'])
 
-Q_SCALE = 10
-def quantize(arr):
-    return (arr*Q_SCALE).astype(np.int32)
+def quantize(arr, q_scale=10):
+    return (arr*q_scale).astype(np.int32)
 
-def dequantize(arr):
-    return arr / Q_SCALE
+def dequantize(arr, q_scale=10):
+    return arr / q_scale
 
 def spiht_encode(image, wavelet='bior4.4', level=7, max_bits=9000000):
     coeffs = wavedec2(image, mode='periodization', wavelet=wavelet, level=level)

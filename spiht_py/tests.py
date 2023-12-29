@@ -3,8 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pywt
 
-from ..spiht import spiht_encode, spiht_decode, get_offspring, dequantize, quantize, simple_spiht_encode, simple_spiht_decode
-from ..utils import load_im, imshow, scale_0_1
+from .spiht import spiht_encode, spiht_decode, get_offspring, dequantize, quantize, simple_spiht_encode, simple_spiht_decode
+from .utils import load_im, imshow, scale_0_1
 
 class Tests(unittest.TestCase):
     def test_get_ll_offspring(self):
@@ -22,7 +22,7 @@ class Tests(unittest.TestCase):
 
     def test_encode_decode(self):
         image = load_im("./images/lenna.png")
-        result = spiht_encode(image)
+        result = spiht_encode(image, max_bits=1000)
         print("DECODING")
         decoding_result = spiht_decode(result['encoded'], **result)
         rec_image = decoding_result['rec_image']
@@ -48,8 +48,8 @@ class Tests(unittest.TestCase):
 
 
     def test_simple_encode_decode(self):
-        image = load_im("./images/zebra.jpg")
-        result = simple_spiht_encode(image, max_bits=99999999999999)
+        image = load_im("./images/lenna.png")
+        result = simple_spiht_encode(image, max_bits=1000)
         print("DECODING")
         decoding_result = simple_spiht_decode(result['encoded'], **result)
         rec_image = decoding_result['rec_image']

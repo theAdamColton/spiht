@@ -1,10 +1,8 @@
 use std::collections::VecDeque;
 
-use ndarray::{ArrayView3, Array3, Array};
-use ndarray_rand::rand::thread_rng;
-use ndarray_rand::rand_distr::{Uniform, Normal};
+use ndarray::{ArrayView3, Array3};
 use ndarray_stats::QuantileExt;
-use bitvec::{bitvec, BitArr, vec::BitVec};
+use bitvec::vec::BitVec;
 
 fn set_bit(x: i32, n: u8, bit: bool) -> i32 {
     let sign = x >= 0;
@@ -140,7 +138,7 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
 
             let is_newly_sig = !is_already_sig && is_currently_sig;
 
-            println!("n{} x{} {} {} {} is_already_sig {} is_currently_sig {} is_newly_sig {} is_bit_set {}",n, x, k,i,j,is_already_sig, is_currently_sig, is_newly_sig, is_bit_set(x, n));
+            //println!("n{} x{} {} {} {} is_already_sig {} is_currently_sig {} is_newly_sig {} is_bit_set {}",n, x, k,i,j,is_already_sig, is_currently_sig, is_newly_sig, is_bit_set(x, n));
 
 
             if is_currently_sig {
@@ -237,7 +235,7 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
 
             let is_newly_sig = !is_already_sig && is_currently_sig;
 
-            println!("n{} {} {} {} is_already_sig {} is_currently_sig {} is_newly_sig {}",n, k,i,j,is_already_sig, is_currently_sig, is_newly_sig);
+            //println!("n{} {} {} {} is_already_sig {} is_currently_sig {} is_newly_sig {}",n, k,i,j,is_already_sig, is_currently_sig, is_newly_sig);
             //
 
             if is_currently_sig {
@@ -264,7 +262,7 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
                     if let Some(x) = pop_front() {
                         // 1 or -1
                         sign = x as i32 * 2 - 1;
-                        println!("{}", sign);
+                        //println!("{}", sign);
                     } else {
                         return rec_arr;
                     }
@@ -276,7 +274,7 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
                         // should be eq to 1.5 * 2 ^ n
                         base_sig = (1 << (n-1)) + (1<<n);
                     }
-                    println!("initializing {} {} {} to {}", k,i,j, sign*base_sig);
+                    //println!("initializing {} {} {} to {}", k,i,j, sign*base_sig);
                     rec_arr[(k,i,j)] = sign * base_sig;
                 }
             }
@@ -289,11 +287,11 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
                     return rec_arr
                 }
 
-                println!("b4 {}", rec_arr[(k,i,j)]);
+                //println!("b4 {}", rec_arr[(k,i,j)]);
 
                 rec_arr[(k,i,j)] = set_bit(rec_arr[(k,i,j)], n, bit);
 
-                println!("after set bit {} {} {}",n,bit, rec_arr[(k,i,j)]);
+                //println!("after set bit {} {} {}",n,bit, rec_arr[(k,i,j)]);
             }
         } 
 
@@ -310,6 +308,7 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
 #[cfg(test)]
 mod tests {
     use ndarray_rand::{RandomExt, rand::{rngs::SmallRng, SeedableRng, Rng}};
+    use ndarray_rand::rand_distr::Normal;
 
     use super::*;
     #[test]
