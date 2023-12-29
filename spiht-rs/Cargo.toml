@@ -1,0 +1,17 @@
+[package]
+name = "spiht-rs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "spiht_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py37"] }
+numpy = { version = "0.20.0" }
+ndarray = "0.15.6"
+bitvec = "1.0.1"
+ndarray-stats = "0.5.1"
+
+[workspace]

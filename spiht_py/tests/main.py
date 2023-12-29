@@ -48,7 +48,7 @@ class Tests(unittest.TestCase):
 
 
     def test_simple_encode_decode(self):
-        image = load_im("./images/lenna.png")
+        image = load_im("./images/zebra.jpg")
         result = simple_spiht_encode(image)
         print("DECODING")
         decoding_result = simple_spiht_decode(result['encoded'], **result)
