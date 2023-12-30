@@ -100,6 +100,7 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
     let mut n = (max as f32).log2() as u8;
     let max_n = n;
 
+    let mut sig_pixels = Array3::<u8>::zeros((c, h, w));
     let mut sig_sets = Array3::<u8>::zeros((c, h, w));
 
     loop {
@@ -119,60 +120,60 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
         while let Some((k,i,j)) = queue.pop_front() {
             let x = arr[(k,i,j)];
 
-            let is_already_sig = sig_sets[(k,i,j)] == 1;
+            let is_set_already_sig = sig_sets[(k,i,j)] != 0;
 
-            let is_currently_sig: bool;
-            if is_already_sig {
-                is_currently_sig = true;
+            let is_set_currently_sig: bool;
+            if is_set_already_sig {
+                is_set_currently_sig = true;
             } else {
-                is_currently_sig = is_set_sig(arr,k,i,j,n,ll_h, ll_w);
-            }
+                is_set_currently_sig = is_set_sig(arr,k,i,j,n,ll_h, ll_w);
 
-            if !is_already_sig {
-                data.push(is_currently_sig);
-
+                data.push(is_set_currently_sig);
                 if data.len() == max_bits {
                     return (data, max_n)
                 }
             }
 
-            let is_newly_sig = !is_already_sig && is_currently_sig;
-
-            //println!("n{} x{} {} {} {} is_already_sig {} is_currently_sig {} is_newly_sig {} is_bit_set {}",n, x, k,i,j,is_already_sig, is_currently_sig, is_newly_sig, is_bit_set(x, n));
+            sig_sets[(k,i,j)] = is_set_currently_sig as u8;
 
 
-            if is_currently_sig {
-                let offspring = get_offspring(i,j,h,w,ll_h,ll_w);
-
-                for (l,m) in offspring {
-                    queue.push_back((k,l,m));
-                }
+            if !is_set_currently_sig {
+                continue;
             }
 
-            if is_newly_sig {
+            let offspring = get_offspring(i,j,h,w,ll_h,ll_w);
+            for (l,m) in offspring {
+                queue.push_back((k,l,m));
+            }
 
-                let element_sig = is_element_sig(x, n);
+            let is_pixel_already_sig = sig_pixels[(k,i,j)] != 0;
 
-                data.push(element_sig);
+            let is_pixel_currently_sig:bool;
+            if is_pixel_already_sig {
+                is_pixel_currently_sig = true;
+            } else {
+                is_pixel_currently_sig = is_element_sig(x, n);
+
+                data.push(is_pixel_currently_sig);
                 if data.len() == max_bits {
                     return (data, max_n)
                 }
+            }
 
-                if element_sig {
-                    sig_sets[(k,i,j)] = 1;
+            let is_pixel_newly_sig = !is_pixel_already_sig & is_pixel_currently_sig;
 
-                    let sign = x >= 0;
+            if is_pixel_newly_sig {
+                sig_pixels[(k,i,j)] = 1;
 
-                    data.push(sign);
-                    if data.len() == max_bits {
-                        return (data, max_n)
-                    }
+                let sign = x >= 0;
+                data.push(sign);
+                if data.len() == max_bits {
+                    return (data, max_n)
                 }
             }
 
-            if is_already_sig {
+            if is_pixel_already_sig {
                 let bit = is_bit_set(x, n);
-
                 data.push(bit);
                 if data.len() == max_bits {
                     return (data, max_n)
@@ -191,7 +192,6 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
 pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize, ll_w: usize) -> Array3<i32> {
     let mut rec_arr = Array3::<i32>::zeros((c,h,w));
 
-    let mut sig_pixels = Array3::<u8>::zeros((c, h, w));
 
     let mut cur_i = 0;
 
@@ -206,6 +206,9 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
         return ret
     };
 
+    let mut sig_pixels = Array3::<u8>::zeros((c, h, w));
+    let mut sig_sets = Array3::<u8>::zeros((c, h, w));
+
     loop {
         let mut queue: VecDeque<(usize, usize, usize)> = VecDeque::new();
 
@@ -217,69 +220,73 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
             }
         }
 
-        //println!("encoding, n = {}, {}kb", n, (data.len() / 8) / 1024);
+        //println!("decoding, n = {}, {}kb", n, (data.len() / 8) / 1024);
 
         while let Some((k,i,j)) = queue.pop_front() {
-            let is_already_sig:bool = sig_pixels[(k,i,j)] == 1;
+            let is_set_already_sig:bool = sig_sets[(k,i,j)] == 1;
 
-            let is_currently_sig: bool;
-            if is_already_sig {
-                is_currently_sig = true;
+            let is_set_currently_sig: bool;
+            if is_set_already_sig {
+                is_set_currently_sig = true;
             } else {
                 if let Some(x) = pop_front() {
-                    is_currently_sig = x; 
+                    is_set_currently_sig = x; 
                 } else {
                     return rec_arr
                 }
             }
 
-            let is_newly_sig = !is_already_sig && is_currently_sig;
+            sig_sets[(k,i,j)] = is_set_currently_sig as u8;
 
-            //println!("n{} {} {} {} is_already_sig {} is_currently_sig {} is_newly_sig {}",n, k,i,j,is_already_sig, is_currently_sig, is_newly_sig);
-            //
+            if !is_set_currently_sig {
+                continue;
+            }
 
-            if is_currently_sig {
-                let offspring = get_offspring(i,j,h,w,ll_h,ll_w);
+            let offspring = get_offspring(i,j,h,w,ll_h,ll_w);
+            for (l,m) in offspring {
+                queue.push_back((k,l,m));
+            }
 
-                for (l,m) in offspring {
-                    queue.push_back((k,l,m));
+
+            let is_pixel_already_sig = sig_pixels[(k,i,j)] != 0;
+
+            let is_pixel_currently_sig:bool;
+            if is_pixel_already_sig {
+                is_pixel_currently_sig = true;
+            } else {
+                if let Some(x) = pop_front() {
+                    is_pixel_currently_sig = x;
+                } else {
+                    return rec_arr;
                 }
             }
 
-            if is_newly_sig {
-                
-                let element_sig: bool;
+            let is_pixel_newly_sig = !is_pixel_already_sig & is_pixel_currently_sig;
+
+            if is_pixel_newly_sig {
+                sig_pixels[(k,i,j)] = 1;
+
+                let sign: i32;
                 if let Some(x) = pop_front() {
-                    element_sig = x;
+                    // 1 or -1
+                    sign = x as i32 * 2 - 1;
+                    //println!("{}", sign);
                 } else {
                     return rec_arr;
                 }
 
-                if element_sig {
-                    sig_pixels[(k,i,j)] = 1;
-
-                    let sign: i32;
-                    if let Some(x) = pop_front() {
-                        // 1 or -1
-                        sign = x as i32 * 2 - 1;
-                        //println!("{}", sign);
-                    } else {
-                        return rec_arr;
-                    }
-
-                    let base_sig: i32;
-                    if n==0 {
-                        base_sig = 1<<n;
-                    } else {
-                        // should be eq to 1.5 * 2 ^ n
-                        base_sig = (1 << (n-1)) + (1<<n);
-                    }
-                    //println!("initializing {} {} {} to {}", k,i,j, sign*base_sig);
-                    rec_arr[(k,i,j)] = sign * base_sig;
+                let base_sig: i32;
+                if n==0 {
+                    base_sig = 1<<n;
+                } else {
+                    // should be eq to 1.5 * 2 ^ n
+                    base_sig = (1 << (n-1)) + (1<<n);
                 }
+
+                rec_arr[(k,i,j)] = sign * base_sig;
             }
 
-            if is_already_sig {
+            if is_pixel_already_sig {
                 let bit:bool;
                 if let Some(x) = pop_front() {
                     bit = x;
@@ -287,11 +294,7 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
                     return rec_arr
                 }
 
-                //println!("b4 {}", rec_arr[(k,i,j)]);
-
                 rec_arr[(k,i,j)] = set_bit(rec_arr[(k,i,j)], n, bit);
-
-                //println!("after set bit {} {} {}",n,bit, rec_arr[(k,i,j)]);
             }
         } 
 

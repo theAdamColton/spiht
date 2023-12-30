@@ -24,6 +24,8 @@ class RustTests(unittest.TestCase):
         rec_coeffs = pywt.array_to_coeffs(rec_arr, slices, output_format='wavedec2')
         rec_image = pywt.waverec2(rec_coeffs, wavelet, mode='periodization')
 
+        print('image encoded to {} kb', (len(data) / 8) / 1024)
+
         f,ax = plt.subplots(2)
         imshow(image, ax=ax[0])
         imshow(rec_image, ax=ax[1])
@@ -36,6 +38,6 @@ class RustTests(unittest.TestCase):
         plt.show()
         plt.close()
 
-        self.assertTrue(np.allclose(image, rec_image))
+        self.assertTrue(np.array_equal(coeffs_arr, rec_arr))
         
 
