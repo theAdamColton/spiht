@@ -3,7 +3,7 @@ from typing import List
 import numpy as np
 import pywt
 
-import spiht_rs
+from . import spiht as spiht_rs
 from .quantize import quantize, dequantize
 
 @dataclass

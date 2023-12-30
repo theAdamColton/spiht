@@ -9,8 +9,8 @@ use pyo3::{
     PyResult, Python, PyObject, wrap_pyfunction,
 };
 
-use spiht::{encode, decode};
-mod spiht;
+use encoder_decoder::{encode, decode};
+mod encoder_decoder;
 
 
 /// Encode DWT coefficients into bytes
@@ -38,7 +38,7 @@ fn decode_spiht<'py>(py: Python<'py>, data_u8: Vec<u8>, n: u8, c: usize, h: usiz
 }
 
 #[pymodule]
-fn spiht_rs<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
+fn spiht<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(encode_spiht, m)?)?;
     m.add_function(wrap_pyfunction!(decode_spiht, m)?)?;
 
