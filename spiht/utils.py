@@ -15,13 +15,6 @@ def scale_0_1(x):
     x = rearrange(x, 'h w ... -> ... h w')
     return x
 
-def is_power_of_two(target: int) -> int:
-    if target > 1:
-        for i in range(1, int(target)):
-            if 2**i >= target:
-                return 2**i
-    return 1
-
 def imshow(x, ax=None, scale=False):
     x = np.moveaxis(x,0,-1)
     if scale:

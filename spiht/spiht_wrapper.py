@@ -18,9 +18,10 @@ class EncodingResult:
     wavelet: str
     quantization_scale: float
     slices: List
+    mode: str
 
 
-def encode_image(image: np.ndarray, wavelet='bior4.4', level=6, max_bits=None, quantization_scale=50):
+def encode_image(image: np.ndarray, wavelet='bior4.4', level=6, max_bits=None, quantization_scale=50, mode='periodization'):
     """
     Takes the DWT of the image, discretizes the DWT coeffs, and encodes it
 
@@ -35,7 +36,7 @@ def encode_image(image: np.ndarray, wavelet='bior4.4', level=6, max_bits=None, q
     if image.ndim != 3:
         raise ValueError('image ndim must be 3: c,h,w')
 
-    coeffs = pywt.wavedec2(image, wavelet=wavelet, level=level, mode='periodization')
+    coeffs = pywt.wavedec2(image, wavelet=wavelet, level=level, mode=mode)
     coeffs_arr,slices = pywt.coeffs_to_array(coeffs, axes=(-2,-1), padding=0)
 
     c,h,w = coeffs_arr.shape
@@ -63,7 +64,8 @@ def encode_image(image: np.ndarray, wavelet='bior4.4', level=6, max_bits=None, q
             ll_w,
             wavelet,
             quantization_scale,
-            slices
+            slices,
+            mode,
             )
     
     return encoding_result
@@ -83,10 +85,11 @@ def decode_image(encoding_result: EncodingResult) -> np.ndarray:
     wavelet = encoding_result.wavelet
     quantization_scale = encoding_result.quantization_scale
     slices=encoding_result.slices
+    mode=encoding_result.mode
 
     rec_arr = spiht_rs.decode(encoded_bytes, max_n, c, h, w, ll_h, ll_w)
     rec_arr = dequantize(rec_arr, quantization_scale)
     rec_coeffs = pywt.array_to_coeffs(rec_arr, slices, output_format='wavedec2')
-    rec_image = pywt.waverec2(rec_coeffs, wavelet, mode='periodization')
+    rec_image = pywt.waverec2(rec_coeffs, wavelet, mode=mode)
 
     return rec_image

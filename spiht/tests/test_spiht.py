@@ -1,9 +1,11 @@
 import unittest
+import os
 import numpy as np
 import pywt
 
 from .. import encode_image, decode_image
 from ..quantize import quantize, dequantize
+from ..utils import load_im, imshow
 
 class Tests(unittest.TestCase):
     def test_encode_decode_random(self):
@@ -31,3 +33,15 @@ class Tests(unittest.TestCase):
             # currently does not pass
             self.assertTrue(np.allclose(image_ground_truth, decoded_image, 1e-4))
         
+    def test_encode_decode_images(self):
+        for image_file in os.listdir("./images/"):
+            print(os.curdir)
+            image = load_im(f"./images/{image_file}")
+            _,h,w = image.shape
+            encoded = encode_image(image, mode='antireflect', wavelet='bior4.4', level=4, max_bits =h*w)
+            decoded_image = decode_image(encoded)
+            imshow(decoded_image)
+
+            #import bpdb
+            #bpdb.set_trace()
+
