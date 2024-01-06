@@ -10,8 +10,7 @@ from .. import spiht as spiht_rs
 class RustTests(unittest.TestCase):
     def test_encode_decode(self):
         image = load_im("./images/skiing.jpg")
-        c,h,w = image.shape
-        level=6
+        level=5
         q_scale = 50
         wavelet = 'bior4.4'
         coeffs = pywt.wavedec2(image, wavelet, level=level, mode='periodization')
@@ -19,6 +18,8 @@ class RustTests(unittest.TestCase):
         coeffs_arr = quantize(coeffs_arr, q_scale)
         ll_h, ll_w = coeffs[0].shape[1], coeffs[0].shape[2]
         data, max_n = spiht_rs.encode(coeffs_arr, ll_h, ll_w, 999999999999)
+
+        c,h,w = coeffs_arr.shape
         rec_arr = spiht_rs.decode(data, max_n, c,h,w, ll_h, ll_w)
         rec_arr_dequant = dequantize(rec_arr, q_scale)
         rec_coeffs = pywt.array_to_coeffs(rec_arr_dequant, slices, output_format='wavedec2')

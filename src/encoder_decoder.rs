@@ -4,6 +4,13 @@ use ndarray::{ArrayView3, Array3};
 use ndarray_stats::QuantileExt;
 use bitvec::vec::BitVec;
 
+fn has_descendents_past_offspring(i:usize,j:usize,h:usize,w:usize) -> bool {
+    if 2*i + 1 >= h || 2*j + 1 >= w {
+        return false
+    } 
+    return true
+}
+
 fn set_bit(x: i32, n: u8, bit: bool) -> i32 {
     let sign = x >= 0;
     if bit {
@@ -86,6 +93,24 @@ fn is_set_sig(arr: ArrayView3<i32>,k: usize,i: usize,j:usize,n:u8, ll_h: usize, 
     false
 }
 
+fn is_l_sig(arr: ArrayView3<i32>,k: usize,i: usize,j:usize,n:u8, ll_h: usize, ll_w: usize) -> bool {
+    let shape = arr.shape();
+
+    let h = shape[shape.len() -2];
+    let w = shape[shape.len() - 1];
+
+    let offspring = get_offspring(i, j, h, w, ll_h, ll_w);
+    for (l,m) in offspring {
+        let secondary_offspring = get_offspring(l, m, h, w, ll_h, ll_w);
+        for (ll,mm) in secondary_offspring {
+            if is_set_sig(arr, k, ll, mm, n, ll_h, ll_w) {
+                return true
+            }
+        }
+    }
+    false
+}
+
 pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -> (BitVec, u8) {
     let c = arr.shape()[0];
     let h = arr.shape()[1];
@@ -100,101 +125,156 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
     let mut n = (max as f32).log2() as u8;
     let max_n = n;
 
-    let mut sig_pixels = Array3::<u8>::zeros((c, h, w));
-    let mut sig_sets = Array3::<u8>::zeros((c, h, w));
-
-    loop {
-        
-        let mut queue: VecDeque<(usize, usize, usize)> = VecDeque::new();
-
-        for i in 0..ll_h {
-            for j in 0..ll_w {
-                for k in 0..c {
-                    queue.push_back((k,i,j));
-                }
+    let mut lsp: VecDeque<(usize,usize,usize)> = VecDeque::new();
+    let mut lip: VecDeque<(usize,usize,usize)> = VecDeque::new();
+    for i in 0..ll_h {
+        for j in 0..ll_w {
+            for k in 0..c {
+                lip.push_back((k,i,j));
             }
         }
+    }
 
-        //println!("encoding, n = {}, {}kb", n, (data.len() / 8) / 1024);
-
-        while let Some((k,i,j)) = queue.pop_front() {
-            let x = arr[(k,i,j)];
-
-            let is_set_already_sig = sig_sets[(k,i,j)] != 0;
-
-            let is_set_currently_sig: bool;
-            if is_set_already_sig {
-                is_set_currently_sig = true;
-            } else {
-                is_set_currently_sig = is_set_sig(arr,k,i,j,n,ll_h, ll_w);
-
-                data.push(is_set_currently_sig);
-                if data.len() == max_bits {
-                    return (data, max_n)
-                }
-            }
-
-            sig_sets[(k,i,j)] = is_set_currently_sig as u8;
-
-
-            if !is_set_currently_sig {
+    // true=type A, false = type B
+    let mut lis: VecDeque<(bool,usize,usize,usize)> = VecDeque::new();
+    for i in 0..ll_h {
+        for j in 0..ll_w {
+            if i%2 == 0 && j%2 == 0 {
                 continue;
             }
+            for k in 0..c {
+                lis.push_back((true, k,i,j));
+            }
+        }
+    }
 
-            let offspring = get_offspring(i,j,h,w,ll_h,ll_w);
-            for (l,m) in offspring {
-                queue.push_back((k,l,m));
+    
+    loop {
+        let lsp_len = lsp.len();
+
+        let mut lip_retain: VecDeque<(usize,usize,usize)> = VecDeque::new();
+        for (k,i,j) in lip {
+            let x = arr[(k,i,j)];
+            let is_sig = is_element_sig(x, n);
+            data.push(is_sig);
+            if data.len() == max_bits {
+                return (data, max_n)
             }
 
-            let is_pixel_already_sig = sig_pixels[(k,i,j)] != 0;
+            if is_sig {
+                lsp.push_back((k,i,j));
 
-            let is_pixel_currently_sig:bool;
-            if is_pixel_already_sig {
-                is_pixel_currently_sig = true;
-            } else {
-                is_pixel_currently_sig = is_element_sig(x, n);
-
-                data.push(is_pixel_currently_sig);
-                if data.len() == max_bits {
-                    return (data, max_n)
-                }
-            }
-
-            let is_pixel_newly_sig = !is_pixel_already_sig & is_pixel_currently_sig;
-
-            if is_pixel_newly_sig {
-                sig_pixels[(k,i,j)] = 1;
-
-                let sign = x >= 0;
+                let sign = x >=0;
                 data.push(sign);
                 if data.len() == max_bits {
                     return (data, max_n)
                 }
+            } else {
+                lip_retain.push_back((k,i,j));
             }
+        }
+        lip = lip_retain;
 
-            if is_pixel_already_sig {
-                let bit = is_bit_set(x, n);
-                data.push(bit);
+        let mut lis_retain: VecDeque<(bool,usize,usize,usize)> = VecDeque::new();
+        while let Some((t,k,i,j)) = lis.pop_front() {
+            if t {
+                // type A
+                let mut desc_sig = false;
+                let offspring = get_offspring(i,j,h,w,ll_h,ll_w);
+                for (l,m) in offspring.to_owned() {
+                    if is_set_sig(arr, k, l, m, n, ll_h, ll_w) {
+                        desc_sig = true;
+                        break;
+                    }
+                }
+
+                data.push(desc_sig);
                 if data.len() == max_bits {
                     return (data, max_n)
                 }
+
+                if desc_sig {
+                    for (l,m) in offspring {
+                        let sig = is_element_sig(arr[(k,l,m)], n);
+
+                        data.push(sig);
+                        if data.len() == max_bits {
+                            return (data, max_n)
+                        }
+
+                        if sig {
+                            lsp.push_back((k,l,m));
+
+                            let sign = arr[(k,l,m)] >= 0;
+                            data.push(sign);
+                            if data.len() == max_bits {
+                                return (data, max_n)
+                            }
+                        } else {
+                            lip.push_back((k,l,m));
+                        }
+                    }
+
+
+                    let l_exists = has_descendents_past_offspring(i,j,h,w);
+                    if l_exists {
+                        lis.push_back((false, k,i,j));
+                    }
+                } else {
+                    lis_retain.push_back((t,k,i,j));
+                }
+
+
+            } else {
+                // type B
+                let l_sig = is_l_sig(arr, k, i, j, n, ll_h, ll_w);
+                data.push(l_sig);
+                if data.len() == max_bits {
+                    return (data, max_n)
+                }
+
+                if l_sig {
+                    for (l,m) in get_offspring(i, j, h, w, ll_h, ll_w) {
+                        lis.push_back((true,k,l,m));
+                    }
+                } else {
+                    lis_retain.push_back((t,k,i,j));
+                }
             }
-        } 
-
-
-        if n == 0 {
-            return (data, max_n)
         }
-        n -= 1;
+        lis = lis_retain;
+
+        // refinement
+        for lsp_i in 0..lsp_len {
+            let (k,i,j) = lsp[lsp_i];
+            let bit = is_bit_set(arr[(k,i,j)], n);
+
+            data.push(bit);
+            if data.len() == max_bits {
+                return (data, max_n)
+            }
+        }
+
+
+        if n==0 {
+            break;
+        }
+
+        n-= 1;
     }
+
+    return (data, max_n);
 }
+
+
 
 pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize, ll_w: usize) -> Array3<i32> {
     let mut rec_arr = Array3::<i32>::zeros((c,h,w));
 
+    assert!(ll_h > 1);
+    assert!(ll_w > 1);
 
     let mut cur_i = 0;
-
     let mut pop_front = || {
         let ret: Option<bool>;
         if cur_i >= data.len() {
@@ -206,73 +286,52 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
         return ret
     };
 
-    let mut sig_pixels = Array3::<u8>::zeros((c, h, w));
-    let mut sig_sets = Array3::<u8>::zeros((c, h, w));
-
-    loop {
-        let mut queue: VecDeque<(usize, usize, usize)> = VecDeque::new();
-
-        for i in 0..ll_h {
-            for j in 0..ll_w {
-                for k in 0..c {
-                    queue.push_back((k,i,j));
-                }
+    let mut lsp: VecDeque<(usize,usize,usize)> = VecDeque::new();
+    let mut lip: VecDeque<(usize,usize,usize)> = VecDeque::new();
+    for i in 0..ll_h {
+        for j in 0..ll_w {
+            for k in 0..c {
+                lip.push_back((k,i,j));
             }
         }
+    }
 
-        //println!("decoding, n = {}, {}kb", n, (data.len() / 8) / 1024);
-
-        while let Some((k,i,j)) = queue.pop_front() {
-            let is_set_already_sig:bool = sig_sets[(k,i,j)] == 1;
-
-            let is_set_currently_sig: bool;
-            if is_set_already_sig {
-                is_set_currently_sig = true;
-            } else {
-                if let Some(x) = pop_front() {
-                    is_set_currently_sig = x; 
-                } else {
-                    return rec_arr
-                }
-            }
-
-            sig_sets[(k,i,j)] = is_set_currently_sig as u8;
-
-            if !is_set_currently_sig {
+    // true=type A, false = type B
+    let mut lis: VecDeque<(bool,usize,usize,usize)> = VecDeque::new();
+    for i in 0..ll_h {
+        for j in 0..ll_w {
+            if i%2 == 0 && j%2 == 0 {
                 continue;
             }
-
-            let offspring = get_offspring(i,j,h,w,ll_h,ll_w);
-            for (l,m) in offspring {
-                queue.push_back((k,l,m));
+            for k in 0..c {
+                lis.push_back((true, k,i,j));
             }
+        }
+    }
 
 
-            let is_pixel_already_sig = sig_pixels[(k,i,j)] != 0;
+    
+    loop {
+        let lsp_len = lsp.len();
 
-            let is_pixel_currently_sig:bool;
-            if is_pixel_already_sig {
-                is_pixel_currently_sig = true;
+        let mut lip_retain: VecDeque<(usize,usize,usize)> = VecDeque::new();
+        for (k,i,j) in lip {
+            let is_sig:bool;
+            if let Some(x) = pop_front() {
+                is_sig=x;
             } else {
-                if let Some(x) = pop_front() {
-                    is_pixel_currently_sig = x;
-                } else {
-                    return rec_arr;
-                }
+                return rec_arr
             }
 
-            let is_pixel_newly_sig = !is_pixel_already_sig & is_pixel_currently_sig;
+            if is_sig {
+                lsp.push_back((k,i,j));
 
-            if is_pixel_newly_sig {
-                sig_pixels[(k,i,j)] = 1;
-
-                let sign: i32;
+                let sign:i32;
                 if let Some(x) = pop_front() {
-                    // 1 or -1
+                    // -1 or 1
                     sign = x as i32 * 2 - 1;
-                    //println!("{}", sign);
                 } else {
-                    return rec_arr;
+                    return rec_arr
                 }
 
                 let base_sig: i32;
@@ -283,27 +342,109 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
                     base_sig = (1 << (n-1)) + (1<<n);
                 }
 
-                rec_arr[(k,i,j)] = sign * base_sig;
+                rec_arr[(k,i,j)] = base_sig * sign;
+            } else {
+                lip_retain.push_back((k,i,j));
             }
+        }
+        lip = lip_retain;
 
-            if is_pixel_already_sig {
-                let bit:bool;
+        let mut lis_retain: VecDeque<(bool,usize,usize,usize)> = VecDeque::new();
+        while let Some((t,k,i,j)) = lis.pop_front() {
+            if t {
+                // type A
+                let desc_sig:bool;
                 if let Some(x) = pop_front() {
-                    bit = x;
+                    desc_sig = x;
                 } else {
                     return rec_arr
                 }
 
-                rec_arr[(k,i,j)] = set_bit(rec_arr[(k,i,j)], n, bit);
+                if desc_sig {
+                    for (l,m) in get_offspring(i, j, h, w, ll_h, ll_w) {
+                        let sig: bool;
+                        if let Some(x) = pop_front() {
+                            sig = x;
+                        } else {
+                            return rec_arr
+                        }
+
+                        if sig {
+                            lsp.push_back((k,l,m));
+
+                            let sign: i32;
+                            if let Some(x) = pop_front() {
+                                // -1 or 1
+                                sign = x as i32 * 2 -1;
+                            } else {
+                                return rec_arr
+                            }
+
+                            let base_sig: i32;
+                            if n==0 {
+                                base_sig = 1<<n;
+                            } else {
+                                // should be eq to 1.5 * 2 ^ n
+                                base_sig = (1 << (n-1)) + (1<<n);
+                            }
+
+                            rec_arr[(k,l,m)] = sign * base_sig;
+                        } else {
+                            lip.push_back((k,l,m));
+                        }
+                    }
+
+                    let l_exists = has_descendents_past_offspring(i,j,h,w);
+                    if l_exists {
+                        lis.push_back((false, k,i,j));
+                    }
+                } else {
+                    lis_retain.push_back((t,k,i,j));
+                }
+
+
+            } else {
+                // type B
+                let l_sig: bool;
+                if let Some(x) = pop_front() {
+                    l_sig = x;
+                } else {
+                    return rec_arr
+                }
+
+                if l_sig {
+                    for (l,m) in get_offspring(i, j, h, w, ll_h, ll_w) {
+                        lis.push_back((true,k,l,m));
+                    }
+                } else {
+                    lis_retain.push_back((t,k,i,j));
+                }
             }
-        } 
-
-
-        if n == 0 {
-            return rec_arr
         }
-        n -= 1;
+        lis = lis_retain;
+
+        // refinement
+        for lsp_i in 0..lsp_len {
+            let (k,i,j) = lsp[lsp_i];
+            let bit:bool;
+            if let Some(x) = pop_front() {
+                bit = x;
+            } else {
+                return rec_arr;
+            }
+
+            rec_arr[(k,i,j)] = set_bit(rec_arr[(k,i,j)], n,bit);
+        }
+
+
+        if n==0 {
+            break;
+        }
+
+        n-= 1;
     }
+
+    rec_arr
 }
 
 
@@ -375,6 +516,24 @@ mod tests {
     }
 
     #[test]
+    fn test_encode_decode_many_random_large() {
+        let rng = &mut SmallRng::seed_from_u64(42);
+
+        let ll_h = 2;
+        let ll_w = 2;
+        let h = 32;
+        let w = 32;
+        let c = 4;
+        for _ in 0..20 {
+            let arrf = Array3::random_using((c,h,w), Normal::new(0.,16.).unwrap(), rng);
+            let arr = arrf.mapv(|x| x as i32);
+            let (data, max_n) = encode(arr.view(), ll_h, ll_w, 10000000);
+            let rec_data = decode(data, max_n, c, h, w, ll_h, ll_w);
+            assert_eq!(arr, rec_data);
+        }
+    }
+
+    #[test]
     fn test_encode_decode_many_random() {
         let rng = &mut SmallRng::seed_from_u64(42);
 
@@ -383,7 +542,7 @@ mod tests {
         let h = 8;
         let w = 8;
         let c = 1;
-        for _ in 0..10 {
+        for _ in 0..20 {
             let arrf = Array3::random_using((c,h,w), Normal::new(0.,16.).unwrap(), rng);
             let arr = arrf.mapv(|x| x as i32);
             let (data, max_n) = encode(arr.view(), ll_h, ll_w, 10000000);
