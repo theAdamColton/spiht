@@ -6,14 +6,13 @@ instead of RGB. The resulting decoded images are shown using matplotlib.
 
 
 import os
-from typing import List
 import numpy as np
 import matplotlib.pyplot as plt
 from einops import einsum
 
 from spiht.utils import load_im,imshow
 from spiht import encode_image, decode_image
-from spiht.spiht_py import encode_image_py, decode_image_py
+from spiht.spiht_py import decode_image_py
 
 # some helper code to convert back and forth between RGB and IPT
 # https://ixora.io/projects/colorblindness/color-blindness-simulation-research/
@@ -107,19 +106,19 @@ for image_file in os.listdir("./images/"):
 
 
         # First, encodes and decodes using the rust implementation
+        # This is the recommended way to encode and decode images
         encoded = encode_image(image, mode=mode, level=level, wavelet=wavelet, max_bits=max_bits, quantization_scale=quantization_scale)
         decoded_image = decode_image(encoded)
 
-        # Converts the encoded_bytes to bits,
-        # which is used by the python implementation
+        # Converts the encoded_bytes from a bytes type, to an array of bits
+        # Bits are used by the python implementation, rather than bytes
         encoded_bytes = encoded.encoded_bytes
         encoded_bytes = np.frombuffer(encoded.encoded_bytes, np.uint8)
         encoded_bits = np.unpackbits(encoded_bytes, bitorder='little')
-        #encoded_bytes = np.packbits(encoded_bits, bitorder='little')
         encoded.encoded_bytes = encoded_bits
 
         
-        #encoded_py = spiht_encode(image, level=level, mode=mode, wavelet=wavelet, max_bits=max_bits, quantization_scale=quantization_scale)
+        # the python decoder is used to reconstruct the image pixels
         decoded_image_py = decode_image_py(encoded)
 
         decoded_image = ipt_to_rgb(decoded_image)
