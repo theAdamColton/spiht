@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pywt
 
-from ..utils import load_im, imshow, scale_0_1
-from ..quantize import quantize, dequantize
+from ..utils import load_im, imshow
 from .. import spiht as spiht_rs
+from ..spiht_wrapper import quantize, dequantize
 
 class RustTests(unittest.TestCase):
     def test_encode_decode(self):
@@ -30,13 +30,19 @@ class RustTests(unittest.TestCase):
         f,ax = plt.subplots(2)
         imshow(image, ax=ax[0])
         imshow(rec_image, ax=ax[1])
-        plt.show()
+
+        # Uncomment the following line to get the script to show the two images
+        #plt.show()
+
         plt.close()
 
         f,ax = plt.subplots(2)
         imshow(rec_arr*1000, ax=ax[0])
         imshow(coeffs_arr*1000, ax=ax[1])
-        plt.show()
+
+        # Uncomment the following line to get the script to show the two images
+        #plt.show()
+
         plt.close()
 
         self.assertTrue(np.array_equal(coeffs_arr, rec_arr))

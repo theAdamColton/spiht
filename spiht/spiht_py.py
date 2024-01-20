@@ -1,8 +1,18 @@
+"""
+This file provides a reference implementation of the spiht encoder and decoder
+
+The python encoder is very slow and not practical for any real use.
+
+The python decoder is not noticably slow.
+"""
+
 import math
 import numpy as np
 from pywt import wavedec2, waverec2
 import pywt
 from collections import namedtuple
+
+from .spiht_wrapper import EncodingResult
 
 def set_bit(x,n,bit):
     sign = x>=0
@@ -29,10 +39,7 @@ def has_descendents_past_offspring(i,j,h,w):
     else:
         return True
 
-def get_offspring(i,j,h,w,level):
-    ll_h = h // 2 ** level
-    ll_w = w // 2 ** level
-    
+def get_offspring(i,j,h,w,ll_h, ll_w):
     if i < ll_h and j < ll_w:
         if i%2 == 0 and j%2 == 0:
             return []
@@ -58,59 +65,60 @@ def get_offspring(i,j,h,w,level):
             (2*i+1, 2*j+1),
         ]
 
-def paint_descendents(i,j,h,w,level,out=None):
-    if out is None:
-        out = np.zeros((h,w))
-    out[i,j] = out[i,j] + 1
-    for k,l in get_offspring(i,j,h,w,level):
-        paint_descendents(k,l,h,w,level,out)
-    return out
-
-def are_descendents_significant(arr, k, i, j, n, level):
+def are_descendents_significant(arr, k, i, j, n, ll_h,ll_w):
     _, h, w =arr.shape
 
-    for i,j in get_offspring(i,j,h,w,level):
-        if is_set_significant(arr,k,i,j,n,level):
+    for i,j in get_offspring(i,j,h,w,ll_h,ll_w):
+        if is_set_significant(arr,k,i,j,n,ll_h,ll_w):
             return True
 
     return False
 
-def is_set_significant(arr,k,i,j,n, level):
+def is_set_significant(arr,k,i,j,n,ll_h,ll_w):
     _, h, w =arr.shape
 
     if is_element_significant(arr[k,i,j], n):
         return True
 
-    for l,m in get_offspring(i,j,h,w, level):
-        if is_set_significant(arr,k,l,m,n,level):
+    for l,m in get_offspring(i,j,h,w,ll_h,ll_w):
+        if is_set_significant(arr,k,l,m,n,ll_h,ll_w):
             return True
 
     return False
 
-LisElement = namedtuple("LisElement", ['c', 'i', 'j', 'type'])
-
-def quantize(arr, quantization_scale=10):
+def quantize(arr, quantization_scale=10.):
     return (arr*quantization_scale).astype(np.int32)
 
-def dequantize(arr, quantization_scale=10):
+def dequantize(arr, quantization_scale=10.):
     return arr / quantization_scale
 
-def spiht_encode(image, wavelet='bior4.4', level=7, mode='periodization', max_bits=9000000, quantization_scale=10):
-    coeffs = wavedec2(image, mode=mode, wavelet=wavelet, level=level)
+LisElement = namedtuple("LisElement", ['c', 'i', 'j', 'type'])
+
+class EndDecoding(Exception):
+    pass
+
+class EndEncoding(Exception):
+    pass
+
+def encode_image_py(image: np.ndarray, wavelet='bior4.4', level=6, max_bits=None, quantization_scale=50, mode='periodization') -> EncodingResult:
+    if image.ndim != 3:
+        raise ValueError('image ndim must be 3: c,h,w')
+
+    coeffs = pywt.wavedec2(image, wavelet=wavelet, level=level, mode=mode)
+    ll_h, ll_w = coeffs[0].shape[1], coeffs[0].shape[2]
     arr,slices = pywt.coeffs_to_array(coeffs, axes=(-2,-1))
+
     arr = quantize(arr, quantization_scale)
 
-    coeffs = pywt.array_to_coeffs(dequantize(arr),slices, output_format='wavedec2')
-    image = waverec2(coeffs, wavelet=wavelet, mode=mode)
+    c,h,w = arr.shape
 
-    c, h, w = arr.shape
+    if max_bits == None:
+        # very large number
+        max_bits = 99999999999999999
 
     n = math.floor(math.log2(int(np.abs(arr).max())))
     max_n = n
 
-
-    class __EndEncoding(Exception):
-        pass
 
     curr_i = dict(i=0)
     out = [0] * max_bits
@@ -118,7 +126,7 @@ def spiht_encode(image, wavelet='bior4.4', level=7, mode='periodization', max_bi
         i = curr_i['i']
         for y in x:
             if i >= max_bits:
-                raise __EndEncoding()
+                raise EndEncoding()
             out[i] = y
             i += 1
         curr_i['i'] = i
@@ -168,12 +176,12 @@ def spiht_encode(image, wavelet='bior4.4', level=7, mode='periodization', max_bi
                 k,i,j = lis_element.c, lis_element.i, lis_element.j
 
                 if lis_element.type == "A":
-                    is_set_sig = are_descendents_significant(arr,k,i,j,n,level)
+                    is_set_sig = are_descendents_significant(arr,k,i,j,n,ll_h,ll_w)
                     append_to_out(is_set_sig)
 
                     if is_set_sig:
                         # processes the four offspring
-                        for offspring_i,offspring_j in get_offspring(i,j,h,w,level):
+                        for offspring_i,offspring_j in get_offspring(i,j,h,w,ll_h,ll_w):
                             is_element_sig = is_element_significant(arr[k, offspring_i, offspring_j], n)
                             append_to_out(is_element_sig)
 
@@ -193,15 +201,15 @@ def spiht_encode(image, wavelet='bior4.4', level=7, mode='periodization', max_bi
                                 
                 else:
                     # type B
-                    offspring = get_offspring(i,j,h,w,level)
+                    offspring = get_offspring(i,j,h,w,ll_h, ll_w)
                     descendents_past_offspring = []
                     for offspring_i, offspring_j in offspring:
-                        descendents_past_offspring.extend(get_offspring(offspring_i,offspring_j,h,w,level))
+                        descendents_past_offspring.extend(get_offspring(offspring_i,offspring_j,h,w,ll_h,ll_w))
 
-                    is_l_significant = any(is_set_significant(arr,k,offspring_i,offspring_j,n,level) for (offspring_i,offspring_j) in descendents_past_offspring)
+                    is_l_significant = any(is_set_significant(arr,k,offspring_i,offspring_j,n,ll_h,ll_w) for (offspring_i,offspring_j) in descendents_past_offspring)
                     append_to_out(is_l_significant)
                     if is_l_significant:
-                        for offspring_i, offspring_j in get_offspring(i,j,h,w,level):
+                        for offspring_i, offspring_j in get_offspring(i,j,h,w,ll_h,ll_w):
                             lis.append(LisElement(k,offspring_i,offspring_j,"A"))
                     else:
                         # keep lis_element in the lis
@@ -219,31 +227,47 @@ def spiht_encode(image, wavelet='bior4.4', level=7, mode='periodization', max_bi
             print(f'encoding quant pass n {n} kb:{(curr_i["i"]/8)/1024:.2f}')
             n -= 1
 
-    except __EndEncoding:
-        return dict(d=out, n=max_n, c=c, h=h, w=w, arr=arr, image=image)
-
-    return dict(d=out, n=max_n, c=c, h=h, w=w, arr=arr, image=image)
-
-def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', mode='periodization', level=7, quantization_scale=10, **kwargs):
-    rec_arr = np.zeros((c,h,w), np.int32)
-
-    # does this just to get the coeff slices
-    dummy_image = rec_arr
-    original_extent = [slice(s) for s in rec_arr.shape]
-    dummy_coeffs = wavedec2(dummy_image, mode=mode, wavelet=wavelet, level=level)
-    _, slices = pywt.coeffs_to_array(dummy_coeffs, axes=(-2,-1))
-
-
-
-    class __EndDecoding(Exception):
+    except EndEncoding:
         pass
+
+    encoding_result = EncodingResult(
+            out,
+            h,
+            w,
+            c,
+            max_n,
+            ll_h,
+            ll_w,
+            wavelet,
+            quantization_scale,
+            slices,
+            mode,
+            )
+
+    return encoding_result
+
+def decode_image_py(encoding_result: EncodingResult) -> np.ndarray:
+    d = encoding_result.encoded_bytes
+    h = encoding_result.h
+    w = encoding_result.w
+    c = encoding_result.c
+    n = encoding_result.max_n
+    ll_h = encoding_result.ll_h
+    ll_w = encoding_result.ll_w
+    wavelet = encoding_result.wavelet
+    quantization_scale = encoding_result.quantization_scale
+    slices=encoding_result.slices
+    mode=encoding_result.mode
+
+    # does a dummy encoding just to get the coeff slices
+    rec_arr = np.zeros((c,h,w), dtype=np.int32)
+
 
     curr_i = dict(i=-1)
     def pop():
         i = curr_i['i']
         if i+1 >= len(d):
-            #print("END DECODING")
-            raise __EndDecoding()
+            raise EndDecoding()
         curr_i['i'] = i + 1
         return d[curr_i['i']]
 
@@ -297,7 +321,7 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', mode='periodization', level
 
                     if is_set_sig:
                         # processes the four offspring
-                        for offspring_i,offspring_j in get_offspring(i,j,h,w,level):
+                        for offspring_i,offspring_j in get_offspring(i,j,h,w,ll_h,ll_w):
                             is_element_sig = pop()
 
                             if is_element_sig:
@@ -320,7 +344,7 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', mode='periodization', level
                     # type B
                     is_l_significant = pop()
                     if is_l_significant:
-                        for offspring_i, offspring_j in get_offspring(i,j,h,w,level):
+                        for offspring_i, offspring_j in get_offspring(i,j,h,w,ll_h,ll_w):
                             lis.append(LisElement(k,offspring_i,offspring_j,"A"))
                     else:
                         # keep lis_element in the lis
@@ -338,13 +362,12 @@ def spiht_decode(d, n, h, w, c=3, wavelet='bior4.4', mode='periodization', level
             # quantization pass 
             print(f'decoding quant pass n {n} kb:{(curr_i["i"]/8) / 1024:.2f}kb')
             n -= 1
-    except __EndDecoding:
-        coeffs = pywt.array_to_coeffs(dequantize(rec_arr, quantization_scale), slices, output_format='wavedec2')
-        rec_image = pywt.waverec2(coeffs, mode=mode, wavelet=wavelet)
-        return dict(rec_image=rec_image, coeffs=coeffs, rec_arr=rec_arr)
+
+    except EndDecoding:
+        pass
 
 
     coeffs = pywt.array_to_coeffs(dequantize(rec_arr, quantization_scale), slices, output_format='wavedec2')
     rec_image = pywt.waverec2(coeffs, mode=mode, wavelet=wavelet)
-    return dict(rec_image=rec_image, coeffs=coeffs, rec_arr=rec_arr)
+    return rec_image
 

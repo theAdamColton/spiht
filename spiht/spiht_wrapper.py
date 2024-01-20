@@ -4,7 +4,12 @@ import numpy as np
 import pywt
 
 from . import spiht as spiht_rs
-from .quantize import quantize, dequantize
+
+def quantize(arr, q_scale=10.):
+    return (arr*q_scale).astype(np.int32)
+
+def dequantize(arr, q_scale=10.):
+    return arr / q_scale
 
 @dataclass
 class EncodingResult:
@@ -37,16 +42,12 @@ def encode_image(image: np.ndarray, wavelet='bior4.4', level=6, max_bits=None, q
         raise ValueError('image ndim must be 3: c,h,w')
 
     coeffs = pywt.wavedec2(image, wavelet=wavelet, level=level, mode=mode)
-    coeffs_arr,slices = pywt.coeffs_to_array(coeffs, axes=(-2,-1), padding=0)
-
-    c,h,w = coeffs_arr.shape
+    ll_h, ll_w = coeffs[0].shape[1], coeffs[0].shape[2]
+    coeffs_arr,slices = pywt.coeffs_to_array(coeffs, axes=(-2,-1))
 
     coeffs_arr = quantize(coeffs_arr, quantization_scale)
 
-    ll_h, ll_w = coeffs[0].shape[1], coeffs[0].shape[2]
-
-    if ll_h < 2 or ll_w < 2:
-        raise ValueError('Too many levels, the highest level of DWT coeffs needs to be at least 2x2')
+    c,h,w = coeffs_arr.shape
 
     if max_bits == None:
         # very large number
