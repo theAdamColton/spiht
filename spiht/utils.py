@@ -3,6 +3,12 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from einops import reduce, rearrange
 
+def bytes_to_bits(spiht_bytes: bytes):
+    np_bytes = np.frombuffer(spiht_bytes, np.uint8)
+    np_bits = np.unpackbits(np_bytes, bitorder='little')
+    return np_bits
+
+
 def load_im(path) -> np.ndarray:
     im= np.asarray(Image.open(path))
     return np.moveaxis(im, -1, 0) / 255

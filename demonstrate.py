@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from einops import einsum
 
-from spiht.utils import load_im,imshow
+from spiht.utils import bytes_to_bits, load_im,imshow
 from spiht import encode_image, decode_image
 from spiht.spiht_py import decode_image_py
 
@@ -113,8 +113,7 @@ for image_file in os.listdir("./images/"):
         # Converts the encoded_bytes from a bytes type, to an array of bits
         # Bits are used by the python implementation, rather than bytes
         encoded_bytes = encoded.encoded_bytes
-        encoded_bytes = np.frombuffer(encoded.encoded_bytes, np.uint8)
-        encoded_bits = np.unpackbits(encoded_bytes, bitorder='little')
+        encoded_bits = bytes_to_bits(encoded_bytes)
         encoded.encoded_bytes = encoded_bits
 
         
