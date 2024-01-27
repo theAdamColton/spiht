@@ -1,9 +1,11 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
+from einops import einsum
 import numpy as np
 import pywt
 
 from . import spiht as spiht_rs
+from .color_spaces import rgb_to_ipt, ipt_to_rgb
 
 def quantize(arr, q_scale=10.):
     return (arr*q_scale).astype(np.int32)
@@ -29,8 +31,18 @@ class EncodingResult:
     slices: List
     mode: str
 
+    # the color_space (if any)
+    # used to encode the image
+    color_space: Optional[str] = None
 
-def encode_image(image: np.ndarray, wavelet='bior4.4', level=6, max_bits=None, quantization_scale=50, mode='periodization'):
+    # This is an optional parameter that defines seperate quantization_scales
+    # per channel
+    # This is used for color spaces where some channels are more important than
+    # others.
+    per_channel_quant_scales: Optional[List[float]] = None
+
+
+def encode_image(image: np.ndarray, wavelet='bior4.4', level=6, max_bits=None, quantization_scale=50, mode='periodization', color_space=None, per_channel_quant_scales=None):
     """
     Takes the DWT of the image, discretizes the DWT coeffs, and encodes it
 
@@ -40,14 +52,24 @@ def encode_image(image: np.ndarray, wavelet='bior4.4', level=6, max_bits=None, q
     max_bits: max number of bits to use when encoding
     quantization_scale: the DWT coeffs are multiplied by this number before being encoded. The default value of 50 works with little perceptual loss for RGB pixels.
 
-    Returns EncodingResult, which contains all of the values needed for decoding
+    Returns EncodingResult, which contains all of the values/settings needed for decoding
     """
     if image.ndim != 3:
         raise ValueError('image ndim must be 3: c,h,w')
 
+    if color_space is not None:
+        if color_space == 'ipt':
+            image = rgb_to_ipt(image)
+        else:
+            raise ValueError(color_space)
+
     coeffs = pywt.wavedec2(image, wavelet=wavelet, level=level, mode=mode)
     ll_h, ll_w = coeffs[0].shape[1], coeffs[0].shape[2]
     coeffs_arr,slices = pywt.coeffs_to_array(coeffs, axes=(-2,-1))
+
+    if per_channel_quant_scales is not None:
+        channel_mults = np.array(per_channel_quant_scales)
+        coeffs_arr = channel_mults[:,None,None] * coeffs_arr
 
     coeffs_arr = quantize(coeffs_arr, quantization_scale)
 
@@ -71,7 +93,9 @@ def encode_image(image: np.ndarray, wavelet='bior4.4', level=6, max_bits=None, q
             quantization_scale,
             slices,
             mode,
-            )
+            color_space,
+            per_channel_quant_scales
+        )
     
     return encoding_result
 
@@ -91,10 +115,23 @@ def decode_image(encoding_result: EncodingResult) -> np.ndarray:
     quantization_scale = encoding_result.quantization_scale
     slices=encoding_result.slices
     mode=encoding_result.mode
+    color_space=encoding_result.color_space
+    per_channel_quant_scales=encoding_result.per_channel_quant_scales
 
     rec_arr = spiht_rs.decode(encoded_bytes, max_n, c, h, w, ll_h, ll_w)
+
+    if per_channel_quant_scales is not None:
+        channel_mults = np.array(per_channel_quant_scales)
+        rec_arr = rec_arr / channel_mults[:,None,None]
+
     rec_arr = dequantize(rec_arr, quantization_scale)
     rec_coeffs = pywt.array_to_coeffs(rec_arr, slices, output_format='wavedec2')
     rec_image = pywt.waverec2(rec_coeffs, wavelet, mode=mode)
+
+    if color_space is not None:
+        if color_space == 'ipt':
+            rec_image = ipt_to_rgb(rec_image)
+        else:
+            raise ValueError(color_space)
 
     return rec_image

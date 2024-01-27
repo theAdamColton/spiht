@@ -20,6 +20,10 @@ I wrote a version in Rust without any performance hacks that performes adequatel
 
 The standalone native python encoder/decoder can be found in `spiht/spiht_py.py`. The core rust code can be found in `src/encoder_decoder.rs`
 
+# Extra features
+
+You can convert RGB pixels into the IPT color space. Compressing images in this color space better preserves details. Additionally, quantization scales can be specified by channel. Using IPT and a [50, 15, 15] quantization scale improves details in images, at an imperceptable cost to color accuracy.
+
 # Tests
 
 I set up some simple python and rust tests. You can run the rust test using `cargo test`. The python tests can be run with `python -m unittest`
