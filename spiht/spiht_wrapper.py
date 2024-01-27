@@ -14,7 +14,11 @@ def dequantize(arr, q_scale=10.):
 @dataclass
 class EncodingResult:
     encoded_bytes: bytes
+    # This is the height of the DWT coefficients! Not the height of the
+    # original image!
     h: int
+    # This is the width of the DWT coefficients! Not the width of the
+    # original image!
     w: int
     c: int
     max_n: int
