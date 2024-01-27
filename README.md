@@ -1,5 +1,9 @@
 # spiht-py
 
+<p align="center">
+<img width="220" alt="Screenshot 2024-01-27 at 11 15 47" src="https://github.com/theAdamColton/spiht-py/assets/72479734/52d8375c-7ed9-44c4-9ace-71edd14dc25a">
+</p>
+
 A python/numpy/rust implementation of the [spiht](https://spiht.com/spiht1.html) algorithm. (Set Partitioning in Hierarchical Trees)
 
 SPIHT is an algorithm originally concieved for image compression. It uses the fact that when a natural image is transformed into its DWT coefficients, the coefficients are highly correlated in a organized hierarchical ordering. It also by default does not use any blocking/tiling like in JPEG, which can help reduce artifacts. 
