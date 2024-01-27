@@ -25,7 +25,7 @@ The standalone native python encoder/decoder can be found in `spiht/spiht_py.py`
 You can convert RGB pixels into the IPT color space. Compressing images in this color space better preserves details. Additionally, quantization scales can be specified by channel. Using IPT and a [50, 15, 15] quantization scale improves details in images, at an imperceptable cost to color accuracy.
 
 
-### Bits per pixel and color scale
+### Bits per pixel and color space
 
 ![rgb](https://github.com/theAdamColton/spiht-py/assets/72479734/582b7599-12a1-424d-96dd-0e35848c34a9)
 ![ipt](https://github.com/theAdamColton/spiht-py/assets/72479734/5178e3ce-b618-4198-9c00-e36643e14c99)
