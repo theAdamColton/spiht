@@ -35,6 +35,29 @@ BPP are as follows, from top to bottom row: 0.075, 0.1, 0.5, 1.0
 
 You can see that the image compressed using the IPT color space has better fine details at all compression levels.
 
+# Recommended Settings
+
+The following recommendations are for high resolution natural images.
+
+Do not use periodization. It can cause artifacts at the borders of images:
+
+<img width=400 src="https://github.com/theAdamColton/spiht-py/assets/72479734/47d5baea-b10f-494f-ac4a-ee37a6747939">
+
+
+Using a larger wavelet with a larger size can improve detail resolution, at the cost of artifacting at the edges of large smooth objects.
+
+
+bior2.2, with mode=reflect:
+
+<img width=400 src="https://github.com/theAdamColton/spiht-py/assets/72479734/349877dc-d126-40de-959e-820b0628348c">
+
+
+bior6.8, with mode=reflect:
+
+<img width=400 src="https://github.com/theAdamColton/spiht-py/assets/72479734/28923105-a588-41a8-9f52-d85045f3e064">
+
+Notice the artifacts at the border of the house and the sky in the bior6.8 image.
+
 # Tests
 
 I set up some simple python and rust tests. You can run the rust test using `cargo test`. The python tests can be run with `python -m unittest`
