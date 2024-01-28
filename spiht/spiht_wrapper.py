@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from typing import List, Optional
-from einops import einsum
 import numpy as np
 import pywt
 
@@ -42,17 +41,21 @@ class EncodingResult:
     per_channel_quant_scales: Optional[List[float]] = None
 
 
-def encode_image(image: np.ndarray, wavelet='bior4.4', level=6, max_bits=None, quantization_scale=50, mode='periodization', color_space=None, per_channel_quant_scales=None):
+def encode_image(image: np.ndarray, wavelet='bior2.2', level=6, max_bits=None, quantization_scale=50, mode='reflect', color_space=None, per_channel_quant_scales=None):
     """
     Takes the DWT of the image, discretizes the DWT coeffs, and encodes it
 
     image: 3D ndarray of (C,H,W), containing floating point pixel values
-    wavelet: type of pywt wavelet to use. The default is bior4.4
-    level: integer number of DWT levels. The default value of 6 works for images of greater than or 64x64 pixels.
+    wavelet: type of pywt wavelet to use. The default is bior2.2 (also known as CDF 5/3).
+    level: integer number of DWT levels. The default value of 6 works for
+        images of greater than or 64x64 pixels.
     max_bits: max number of bits to use when encoding
-    quantization_scale: the DWT coeffs are multiplied by this number before being encoded. The default value of 50 works with little perceptual loss for RGB pixels.
+    quantization_scale: the DWT coeffs are multiplied by this number before
+        being encoded. The default value of 50 works with little perceptual loss
+        for RGB pixels.
 
-    Returns EncodingResult, which contains all of the values/settings needed for decoding
+    Returns EncodingResult, which contains all of the values/settings needed
+        for decoding
     """
     if image.ndim != 3:
         raise ValueError('image ndim must be 3: c,h,w')

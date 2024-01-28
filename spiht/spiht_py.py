@@ -8,7 +8,6 @@ The python decoder is not noticably slow.
 
 import math
 import numpy as np
-from pywt import wavedec2, waverec2
 import pywt
 from collections import namedtuple
 
@@ -100,7 +99,7 @@ class EndDecoding(Exception):
 class EndEncoding(Exception):
     pass
 
-def encode_image_py(image: np.ndarray, wavelet='bior4.4', level=6, max_bits=None, quantization_scale=50, mode='periodization') -> EncodingResult:
+def encode_image_py(image: np.ndarray, wavelet='bior2.2', level=6, max_bits=None, quantization_scale=50, mode='reflect') -> EncodingResult:
     if image.ndim != 3:
         raise ValueError('image ndim must be 3: c,h,w')
 

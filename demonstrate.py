@@ -8,16 +8,15 @@ instead of RGB. The resulting decoded images are shown using matplotlib.
 import os
 import matplotlib.pyplot as plt
 
-from spiht.utils import bytes_to_bits, load_im,imshow
+from spiht.utils import load_im,imshow
 from spiht import encode_image, decode_image
-from spiht.spiht_py import decode_image_py
 
 
 # main script
-wavelet='bior4.4'
+wavelet='bior2.2'
 level=5
 quantization_scale=40
-mode='periodization'
+mode='reflect'
 color_space='ipt'
 per_channel_quant_scales=[50,15,15]
 
@@ -25,8 +24,9 @@ per_channel_quant_scales=[50,15,15]
 bpps = [0.075, 0.1, 0.5, 1.0]
 
 for image_file in os.listdir("./images/"):
+    image_file = './images/' + image_file
     print(image_file)
-    image = load_im(f"./images/{image_file}")
+    image = load_im(image_file)
 
     _,h,w = image.shape
 
