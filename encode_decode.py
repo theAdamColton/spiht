@@ -7,6 +7,7 @@ import math
 from argparse import ArgumentParser
 from PIL import Image
 import numpy as np
+from spiht.spiht_wrapper import SpihtSettings
 
 from spiht.utils import load_im
 from spiht import encode_image,decode_image
@@ -37,15 +38,18 @@ def main(args):
     max_bits = round(args.bpp * pixels)
 
     print(f"Starting encoding of image {c} {h} {w}")
-    encoded = encode_image(
-           im,
-           args.wavelet,
-           level,
-           max_bits,
+    spiht_settings = SpihtSettings(
            quantization_scale=1,
            mode=args.mode,
+           wavelet=args.wavelet,
            color_space='ipt',
            per_channel_quant_scales=[50,15,15],
+            )
+    encoded = encode_image(
+           im,
+           spiht_settings,
+           level,
+           max_bits,
    )
     print(f"Encoding Done. Image encoded to {len(encoded.encoded_bytes) / 1024:.2f}kb")
     dec_im = decode_image(encoded)

@@ -7,6 +7,7 @@ instead of RGB. The resulting decoded images are shown using matplotlib.
 
 import os
 import matplotlib.pyplot as plt
+from spiht import SpihtSettings
 
 from spiht.utils import load_im,imshow
 from spiht import encode_image, decode_image
@@ -14,14 +15,21 @@ from spiht import encode_image, decode_image
 
 # main script
 wavelet='bior2.2'
-level=5
-quantization_scale=40
+level=None
+quantization_scale=1.
 mode='reflect'
 color_space='ipt'
-per_channel_quant_scales=[50,15,15]
+per_channel_quant_scales=[100.,20.,20.]
+spiht_settings = SpihtSettings(
+        wavelet,
+        quantization_scale,
+        mode,
+        color_space,
+        per_channel_quant_scales
+        )
 
 # bits per pixel
-bpps = [0.075, 0.1, 0.5, 1.0]
+bpps = [0.1, 0.5, 1.0]
 
 for image_file in os.listdir("./images/"):
     image_file = './images/' + image_file
@@ -44,7 +52,7 @@ for image_file in os.listdir("./images/"):
 
         # First, encodes and decodes using the rust implementation
         # This is the recommended way to encode and decode images
-        encoded = encode_image(image, mode=mode, level=level, wavelet=wavelet, max_bits=max_bits, quantization_scale=quantization_scale, color_space=color_space, per_channel_quant_scales=per_channel_quant_scales)
+        encoded = encode_image(image,spiht_settings,level,max_bits)
         decoded_image = decode_image(encoded)
 
         imshow(decoded_image,ax)

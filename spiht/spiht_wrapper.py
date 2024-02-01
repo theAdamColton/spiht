@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Any
 import numpy as np
 import pywt
 
@@ -12,71 +12,157 @@ def quantize(arr, q_scale=10.):
 def dequantize(arr, q_scale=10.):
     return arr / q_scale
 
+
 @dataclass
-class EncodingResult:
-    encoded_bytes: bytes
-    # This is the height of the DWT coefficients! Not the height of the
-    # original image!
-    h: int
-    # This is the width of the DWT coefficients! Not the width of the
-    # original image!
-    w: int
-    c: int
-    max_n: int
-    ll_h: int
-    ll_w: int
-    wavelet: str
-    quantization_scale: float
-    slices: List
-    mode: str
+class SpihtSettings:
+    """
+    These are parameters that are not particular to a single image,
+    but instead pertain to the spiht algorithm.
 
-    # the color_space (if any)
-    # used to encode the image
+    If these settings are pre-agreed upon, then they don't need to be saved when
+    encoding images.
+
+    The default settings are picked to work for general case 2D data.
+
+    For RGB input images of natural scenes, I'd recommend the following settings:
+        quantization_scale=1
+        color_space ='ipt'
+        per_channel_quant_scales=[100,20,20]
+
+    Parameters:
+
+    wavelet: type of pywt wavelet to use. The default is bior2.2 (also known as CDF 5/3).
+
+    quantization_scale: the DWT coeffs are multiplied by this number before
+        being encoded. The default value of 50 works with little perceptual loss
+        for RGB pixels.
+    
+    color_space:
+        the color_space (if any)
+        used to encode the image. 
+        Currently, can be None, or 'ipt'
+
+    per_channel_quant_scales:
+        This should be None, or a list of floats the same length as the number
+        of channels in the image. This is useful for natural images encoded in
+        color spaces such as IPT, because the data in the I channel is more
+        important, and should have a higher quantization coefficient than the
+        other two P and T channels.
+    """
+    wavelet: str = 'bior2.2'
+    quantization_scale: float = 50.0
+    mode: str = 'reflect'
     color_space: Optional[str] = None
-
     # This is an optional parameter that defines seperate quantization_scales
     # per channel
     # This is used for color spaces where some channels are more important than
     # others.
     per_channel_quant_scales: Optional[List[float]] = None
 
+@dataclass
+class EncodingResult:
+    """
+    encoded_bytes: bytes returned by the spiht encoder
+    h: height of the original image
+    w: width of the original image
+    c: number of channels of the original image
+    max_n: The starting n parameter used in the spiht encoder
+    level: Optional number of DWT dec levels
+    """
+    encoded_bytes: bytes
+    h: int
+    w: int
+    c: int
+    max_n: int
+    level: Optional[int]
 
-def encode_image(image: np.ndarray, wavelet='bior2.2', level=6, max_bits=None, quantization_scale=50, mode='reflect', color_space=None, per_channel_quant_scales=None):
+    spiht_settings: SpihtSettings
+
+
+def get_slices_and_h_w(h: int, w: int, spiht_settings: SpihtSettings, level: Optional[int]):
+    """
+    Returns the same exact slices that would be used in the Wavedec
+    same as pywt.coeffs_to_array slices
+
+    Only works for a 3D array, with Wavedec2
+
+    Returns:
+    slices, height of rec array, width of rec array
+    """
+    shapes = pywt.wavedecn_shapes(
+        (1, h, w),
+        wavelet=spiht_settings.wavelet,
+        mode=spiht_settings.mode,
+        level=level,
+        axes=(-2, -1),
+    )
+    *_, start_h, start_w = shapes[0]
+
+    slices: List[Any] = [(slice(None), slice(start_h), slice(start_w))]
+    for shape in shapes[1:]:
+        shape_ad = shape["ad"]
+        shape_da = shape["da"]
+        shape_dd = shape["dd"]
+        slices.append(
+            {
+                "ad": (
+                    slice(None),
+                    slice(shape_ad[1]),
+                    slice(start_w, start_w + shape_ad[2]),
+                ),
+                "da": (
+                    slice(None),
+                    slice(start_h, start_h + shape_da[1]),
+                    slice(shape_da[2]),
+                ),
+                "dd": (
+                    slice(None),
+                    slice(start_h, start_h + shape_dd[1]),
+                    slice(start_w, start_w + shape_dd[2]),
+                ),
+            }
+        )
+
+        start_h += shape["dd"][1]
+        start_w += shape["dd"][2]
+
+    return slices, start_h, start_w
+
+
+def encode_image(image: np.ndarray, spiht_settings:SpihtSettings=SpihtSettings(), level: Optional[int] = None, max_bits: Optional[int] = None):
     """
     Takes the DWT of the image, discretizes the DWT coeffs, and encodes it
 
     image: 3D ndarray of (C,H,W), containing floating point pixel values
-    wavelet: type of pywt wavelet to use. The default is bior2.2 (also known as CDF 5/3).
-    level: integer number of DWT levels. The default value of 6 works for
-        images of greater than or 64x64 pixels.
+    spiht_settings: Settings to be used for quantization and subsequent DWT transform
+    level: integer number of DWT levels. 
     max_bits: max number of bits to use when encoding
-    quantization_scale: the DWT coeffs are multiplied by this number before
-        being encoded. The default value of 50 works with little perceptual loss
-        for RGB pixels.
 
-    Returns EncodingResult, which contains all of the values/settings needed
-        for decoding
+    Returns EncodingResult
     """
     if image.ndim != 3:
         raise ValueError('image ndim must be 3: c,h,w')
 
+    c,h,w = image.shape
+
+    color_space = spiht_settings.color_space
     if color_space is not None:
         if color_space == 'ipt':
             image = rgb_to_ipt(image)
         else:
             raise ValueError(color_space)
 
-    coeffs = pywt.wavedec2(image, wavelet=wavelet, level=level, mode=mode)
-    ll_h, ll_w = coeffs[0].shape[1], coeffs[0].shape[2]
-    coeffs_arr,slices = pywt.coeffs_to_array(coeffs, axes=(-2,-1))
 
+    coeffs = pywt.wavedec2(image, wavelet=spiht_settings.wavelet, level=level, mode=spiht_settings.mode)
+    ll_h, ll_w = coeffs[0].shape[1], coeffs[0].shape[2]
+    coeffs_arr,_ = pywt.coeffs_to_array(coeffs, axes=(-2,-1))
+
+    per_channel_quant_scales = spiht_settings.per_channel_quant_scales
     if per_channel_quant_scales is not None:
         channel_mults = np.array(per_channel_quant_scales)
         coeffs_arr = channel_mults[:,None,None] * coeffs_arr
 
-    coeffs_arr = quantize(coeffs_arr, quantization_scale)
-
-    c,h,w = coeffs_arr.shape
+    coeffs_arr = quantize(coeffs_arr, spiht_settings.quantization_scale)
 
     if max_bits == None:
         # very large number
@@ -90,14 +176,8 @@ def encode_image(image: np.ndarray, wavelet='bior2.2', level=6, max_bits=None, q
             w,
             c,
             max_n,
-            ll_h,
-            ll_w,
-            wavelet,
-            quantization_scale,
-            slices,
-            mode,
-            color_space,
-            per_channel_quant_scales
+            level,
+            spiht_settings
         )
     
     return encoding_result
@@ -112,16 +192,20 @@ def decode_image(encoding_result: EncodingResult) -> np.ndarray:
     w = encoding_result.w
     c = encoding_result.c
     max_n = encoding_result.max_n
-    ll_h = encoding_result.ll_h
-    ll_w = encoding_result.ll_w
-    wavelet = encoding_result.wavelet
-    quantization_scale = encoding_result.quantization_scale
-    slices=encoding_result.slices
-    mode=encoding_result.mode
-    color_space=encoding_result.color_space
-    per_channel_quant_scales=encoding_result.per_channel_quant_scales
+    level = encoding_result.level
+    spiht_settings = encoding_result.spiht_settings
 
-    rec_arr = spiht_rs.decode(encoded_bytes, max_n, c, h, w, ll_h, ll_w)
+
+    slices, enc_h, enc_w = get_slices_and_h_w(h,w,spiht_settings,level)
+    ll_h, ll_w = slices[0][1].stop, slices[0][2].stop
+
+    wavelet = spiht_settings.wavelet
+    quantization_scale = spiht_settings.quantization_scale
+    mode=spiht_settings.mode
+    color_space=spiht_settings.color_space
+    per_channel_quant_scales=spiht_settings.per_channel_quant_scales
+
+    rec_arr = spiht_rs.decode(encoded_bytes, max_n, c, enc_h, enc_w, ll_h, ll_w)
 
     if per_channel_quant_scales is not None:
         channel_mults = np.array(per_channel_quant_scales)
