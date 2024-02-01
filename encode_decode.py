@@ -8,6 +8,7 @@ from argparse import ArgumentParser
 from PIL import Image
 import numpy as np
 from spiht.spiht_wrapper import SpihtSettings
+import time
 
 from spiht.utils import load_im
 from spiht import encode_image,decode_image
@@ -37,7 +38,6 @@ def main(args):
     pixels = h*w
     max_bits = round(args.bpp * pixels)
 
-    print(f"Starting encoding of image {c} {h} {w}")
     spiht_settings = SpihtSettings(
            quantization_scale=1,
            mode=args.mode,
@@ -45,15 +45,20 @@ def main(args):
            color_space='ipt',
            per_channel_quant_scales=[50,15,15],
             )
+    print(f"Starting encoding of image {c} {h} {w}")
+    st = time.time()
     encoded = encode_image(
            im,
            spiht_settings,
            level,
            max_bits,
-   )
-    print(f"Encoding Done. Image encoded to {len(encoded.encoded_bytes) / 1024:.2f}kb")
+    )
+    et = time.time()
+    print(f"Encoding done in {et-st:.3f}s. Image encoded to {len(encoded.encoded_bytes) / 1024:.2f}kb")
+    st = time.time()
     dec_im = decode_image(encoded)
-    print(f"Decoding Done. L2 distance: {((im-dec_im)**2).mean():.5f}")
+    et = time.time()
+    print(f"Decoding done in {et-st:.3f}s. L2 distance: {((im-dec_im)**2).mean():.5f}")
     dec_im = np.moveaxis(dec_im, 0, -1)
     dec_im = dec_im.clip(0.0, 1.0)
     dec_im = (dec_im * 255).astype(np.uint8)
