@@ -3,10 +3,9 @@ import numpy as np
 import sys
 from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
-from pygifsicle import optimize
 
 from spiht.spiht_wrapper import SpihtSettings, get_slices_and_h_w
-from spiht.utils import load_im, scale_0_1
+from spiht.utils import load_im
 from spiht import encode_image,decode_image
 from spiht.spiht import decode
 
@@ -16,10 +15,10 @@ spiht_settings = SpihtSettings(
        per_channel_quant_scales=[100,20,20],
 )
 
-frames = 30
+frames = 40
 
 bpp_scale = 2
-bpps = np.linspace(0.01, 0.25 ** (1/bpp_scale), frames) ** bpp_scale
+bpps = np.linspace(0.01, 0.5 ** (1/bpp_scale), frames) ** bpp_scale
 
 
 print('loading image', sys.argv[1])
@@ -73,18 +72,25 @@ for bpp in tqdm(bpps):
     out_im = out_im.clip(0.0, 1.0)
     out_im = (out_im * 255).astype(np.uint8)
     out_im = Image.fromarray(out_im)
-    ImageDraw.Draw(out_im).text((10, 10),f"BPP: {bpp:.4f}",(255,100,100),font=font)
-    ims.append(out_im)
+    ImageDraw.Draw(out_im).text((10, 10),f"BPP: {bpp:.4f}",(255,0,0),font=font)
+    ims.append(np.array(out_im))
 
 # duplicates last frame
 for _ in range(5):
     ims.append(ims[-1])
 
-print('saving gif...', 'out.gif')
+print('saving animation...')
 
 total_duration_ms = 15000
 duration_per_frame_ms = total_duration_ms / len(ims)
 
-imageio.mimsave("out.gif", ims, duration=duration_per_frame_ms, loop=0)
-print('optimizing gif size')
-optimize('out.gif')
+w = imageio.get_writer('out.mp4',
+                       #codec='hevc_vaapi',
+                       format='FFMPEG', mode='I',
+                       codec='h264',
+                       fps = 1 / (duration_per_frame_ms / 1000))
+for im in ims:
+    w.append_data(im)
+#imageio.mimsave("out.gif", ims, duration=duration_per_frame_ms, loop=0)
+#print('optimizing gif size')
+#optimize('out.gif')
