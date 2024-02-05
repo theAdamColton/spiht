@@ -1,3 +1,7 @@
+.DS_Store
+*.gif
+*.m4a
+*.mp4
 **/*/__pycache__/
 **/*/.DS_Store
 Cargo.lock

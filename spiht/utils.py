@@ -11,7 +11,13 @@ def bytes_to_bits(spiht_bytes: bytes):
 
 def load_im(path) -> np.ndarray:
     im= np.asarray(Image.open(path))
-    return np.moveaxis(im, -1, 0) / 255
+    if im.ndim > 2:
+        im = np.moveaxis(im, -1, 0)
+    else:
+        im = im[None,:,:]
+
+    im = im / 255
+    return im
 
 def scale_0_1(x):
     x = rearrange(x, '... h w -> h w ...')
@@ -22,7 +28,8 @@ def scale_0_1(x):
     return x
 
 def imshow(x, ax=None, scale=False):
-    x = np.moveaxis(x,0,-1)
+    if x.ndim > 2:
+        x = np.moveaxis(x,0,-1)
     if scale:
         x = scale_0_1(x)
 
