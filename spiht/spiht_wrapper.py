@@ -4,7 +4,7 @@ import numpy as np
 import pywt
 
 from . import spiht as spiht_rs
-from .color_spaces import rgb_to_ipt, ipt_to_rgb
+from . import color_models
 
 def quantize(arr, q_scale=10.):
     return (arr*q_scale).astype(np.int32)
@@ -26,7 +26,7 @@ class SpihtSettings:
 
     For RGB input images of natural scenes, I'd recommend the following settings:
         quantization_scale=1
-        color_space ='ipt'
+        color_model ='ipt'
         per_channel_quant_scales=[100,20,20]
 
     Parameters:
@@ -37,10 +37,9 @@ class SpihtSettings:
         being encoded. The default value of 50 works with little perceptual loss
         for RGB pixels.
     
-    color_space:
+    color_model:
         the color_space (if any)
-        used to encode the image. 
-        Currently, can be None, or 'ipt'
+        used to encode the image. Supported color models a
 
     per_channel_quant_scales:
         This should be None, or a list of floats the same length as the number
@@ -52,7 +51,7 @@ class SpihtSettings:
     wavelet: str = 'bior2.2'
     quantization_scale: float = 50.0
     mode: str = 'reflect'
-    color_space: Optional[str] = None
+    color_model: Optional[str] = None
     # This is an optional parameter that defines seperate quantization_scales
     # per channel
     # This is used for color spaces where some channels are more important than
@@ -145,12 +144,9 @@ def encode_image(image: np.ndarray, spiht_settings:SpihtSettings=SpihtSettings()
 
     c,h,w = image.shape
 
-    color_space = spiht_settings.color_space
-    if color_space is not None:
-        if color_space == 'ipt':
-            image = rgb_to_ipt(image)
-        else:
-            raise ValueError(color_space)
+    color_model = spiht_settings.color_model
+    if color_model is not None:
+        image = color_models.convert(image, 'RGB', color_model)
 
 
     coeffs = pywt.wavedec2(image, wavelet=spiht_settings.wavelet, level=level, mode=spiht_settings.mode)
@@ -202,7 +198,7 @@ def decode_image(encoding_result: EncodingResult) -> np.ndarray:
     wavelet = spiht_settings.wavelet
     quantization_scale = spiht_settings.quantization_scale
     mode=spiht_settings.mode
-    color_space=spiht_settings.color_space
+    color_model=spiht_settings.color_model
     per_channel_quant_scales=spiht_settings.per_channel_quant_scales
 
     rec_arr = spiht_rs.decode(encoded_bytes, max_n, c, enc_h, enc_w, ll_h, ll_w)
@@ -215,10 +211,7 @@ def decode_image(encoding_result: EncodingResult) -> np.ndarray:
     rec_coeffs = pywt.array_to_coeffs(rec_arr, slices, output_format='wavedec2')
     rec_image = pywt.waverec2(rec_coeffs, wavelet, mode=mode)
 
-    if color_space is not None:
-        if color_space == 'ipt':
-            rec_image = ipt_to_rgb(rec_image)
-        else:
-            raise ValueError(color_space)
+    if color_model is not None:
+        rec_image = color_models.convert(rec_image, color_model, "RGB")
 
     return rec_image

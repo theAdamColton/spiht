@@ -9,7 +9,7 @@ import os
 import matplotlib.pyplot as plt
 from spiht import SpihtSettings
 
-from spiht.utils import load_im,imshow
+from spiht.utils import imload,imshow
 from spiht import encode_image, decode_image
 
 
@@ -34,7 +34,7 @@ bpps = [0.1, 0.5, 1.0]
 for image_file in os.listdir("./images/"):
     image_file = './images/' + image_file
     print(image_file)
-    image = load_im(image_file)
+    image = imload(image_file)
 
     _,h,w = image.shape
 

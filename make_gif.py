@@ -5,13 +5,13 @@ from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
 
 from spiht.spiht_wrapper import SpihtSettings, get_slices_and_h_w
-from spiht.utils import load_im
+from spiht.utils import imload
 from spiht import encode_image,decode_image
 from spiht.spiht import decode
 
 spiht_settings = SpihtSettings(
        quantization_scale=1,
-       color_space='ipt',
+       color_model='IPT',
        per_channel_quant_scales=[100,20,20],
 )
 
@@ -22,7 +22,7 @@ bpps = np.linspace(0.01, 0.5 ** (1/bpp_scale), frames) ** bpp_scale
 
 
 print('loading image', sys.argv[1])
-im = load_im(sys.argv[1])
+im = imload(sys.argv[1])
 
 c,h,w = im.shape
 

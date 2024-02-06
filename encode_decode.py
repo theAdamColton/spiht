@@ -5,26 +5,28 @@ saves an image of the decoded image
 """
 import math
 from argparse import ArgumentParser
+from typing import List, Optional
 from PIL import Image
 import numpy as np
 from spiht.spiht_wrapper import SpihtSettings, get_slices_and_h_w
 import time
 
-from spiht.utils import load_im
+from spiht.utils import imload
 from spiht import encode_image,decode_image
 
 parser =ArgumentParser()
 parser.add_argument('image_filename')
 parser.add_argument('--bpp', help='bits per pixel', type=float, default=0.1)
-parser.add_argument('--quantization_scale', default=1.0, type=float)
+parser.add_argument('--quantization_scale', default=255.0, type=float)
 parser.add_argument('--level', help='wavedec2 level. default is set so that the highest DWT level has a width and height of 4.', default=None, type=int)
 parser.add_argument('--wavelet', help='wavedec2 wavelet', default='bior2.2', type=str)
 parser.add_argument('--mode', help='wavedec2 mode', default='reflect', type=str)
-parser.add_argument('--disable_ipt', action="store_true")
+parser.add_argument('--color_model', default="IPT", type=str)
+parser.add_argument('--per_channel_quant_scales', default=[1., 0.2, 0.2], type=List[float])
 parser.add_argument('--out', help='save reconstructed image to this file path', type=str, default='reconstructed.png')
 
 def main(args):
-    im = load_im(args.image_filename)
+    im = imload(args.image_filename)
 
     c,h,w = im.shape
 
@@ -44,8 +46,8 @@ def main(args):
            quantization_scale=args.quantization_scale,
            mode=args.mode,
            wavelet=args.wavelet,
-           color_space=None if args.disable_ipt else 'ipt',
-           per_channel_quant_scales=None if args.disable_ipt else [50,15,15],
+           color_model=args.color_model,
+           per_channel_quant_scales=args.per_channel_quant_scales,
             )
     print(f"Starting encoding of image {c} {h} {w}")
     st = time.time()

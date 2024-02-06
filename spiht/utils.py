@@ -9,7 +9,7 @@ def bytes_to_bits(spiht_bytes: bytes):
     return np_bits
 
 
-def load_im(path) -> np.ndarray:
+def imload(path) -> np.ndarray:
     im= np.asarray(Image.open(path))
     if im.ndim > 2:
         im = np.moveaxis(im, -1, 0)

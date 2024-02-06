@@ -3,13 +3,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pywt
 
-from ..utils import load_im, imshow
+from ..utils import imload, imshow
 from .. import spiht as spiht_rs
 from ..spiht_wrapper import quantize, dequantize
 
 class RustTests(unittest.TestCase):
     def test_encode_decode(self):
-        image = load_im("./images/skiing.jpg")
+        image = imload("./images/skiing.jpg")
         level=5
         q_scale = 50
         wavelet = 'bior4.4'
