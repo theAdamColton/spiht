@@ -53,7 +53,7 @@ for image_file in os.listdir("./images/"):
         # First, encodes and decodes using the rust implementation
         # This is the recommended way to encode and decode images
         encoded = encode_image(image,spiht_settings,level,max_bits)
-        decoded_image = decode_image(encoded)
+        decoded_image = decode_image(encoded, spiht_settings)
 
         imshow(decoded_image,ax)
         #ax.set_title(f'decoded {len(encoded.encoded_bytes)/1024:.2f}kb  bpp{bpp}')

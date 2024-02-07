@@ -47,7 +47,8 @@ for bpp in tqdm(bpps):
 
     encoded.encoded_bytes = _bytes
     rec_im = decode_image(
-            encoded
+            encoded,
+            spiht_settings
             )
 
 

@@ -67,7 +67,7 @@ def main(args):
     ll_h, ll_w = slices[0][1].stop, slices[0][2].stop
     print(f"ll_h ll_w: {ll_h, ll_w}")
     st = time.time()
-    dec_im = decode_image(encoded)
+    dec_im = decode_image(encoded, spiht_settings)
     et = time.time()
     print(f"Decoding done in {et-st:.3f}s. L2 distance: {((im-dec_im)**2).mean():.5f}")
 
