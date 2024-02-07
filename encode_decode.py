@@ -22,7 +22,7 @@ parser.add_argument('--level', help='wavedec2 level. default is set so that the 
 parser.add_argument('--wavelet', help='wavedec2 wavelet', default='bior2.2', type=str)
 parser.add_argument('--mode', help='wavedec2 mode', default='reflect', type=str)
 parser.add_argument('--color_model', default="IPT", type=str)
-parser.add_argument('--per_channel_quant_scales', default=[1., 0.2, 0.2], type=List[float])
+parser.add_argument('--per_channel_quant_scales', default="1., 0.2, 0.2", type=str)
 parser.add_argument('--out', help='save reconstructed image to this file path', type=str, default='reconstructed.png')
 
 def main(args):
@@ -42,12 +42,14 @@ def main(args):
     pixels = h*w
     max_bits = round(args.bpp * pixels)
 
+    per_channel_quant_scales = list(float(x) for x in args.per_channel_quant_scales.split(","))
+
     spiht_settings = SpihtSettings(
            quantization_scale=args.quantization_scale,
            mode=args.mode,
            wavelet=args.wavelet,
            color_model=args.color_model,
-           per_channel_quant_scales=args.per_channel_quant_scales,
+           per_channel_quant_scales=per_channel_quant_scales,
             )
     print(f"Starting encoding of image {c} {h} {w}")
     st = time.time()

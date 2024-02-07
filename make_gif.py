@@ -10,15 +10,17 @@ from spiht import encode_image,decode_image
 from spiht.spiht import decode
 
 spiht_settings = SpihtSettings(
-       quantization_scale=1,
-       color_model='IPT',
-       per_channel_quant_scales=[100,20,20],
+       quantization_scale=150,
+       color_model='Jzazbz',
+       per_channel_quant_scales=[8,1,1],
+       wavelet="bior4.4",
+       mode="symmetric",
 )
 
 frames = 40
 
 bpp_scale = 2
-bpps = np.linspace(0.01, 0.5 ** (1/bpp_scale), frames) ** bpp_scale
+bpps = np.linspace(0.01, 0.7 ** (1/bpp_scale), frames) ** bpp_scale
 
 
 print('loading image', sys.argv[1])

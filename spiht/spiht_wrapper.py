@@ -7,7 +7,8 @@ from . import spiht as spiht_rs
 from . import color_models
 
 def quantize(arr, q_scale=10.):
-    return (arr*q_scale).astype(np.int32)
+    arr = arr * q_scale
+    return arr.astype(np.int32)
 
 def dequantize(arr, q_scale=10.):
     return arr / q_scale
@@ -74,8 +75,6 @@ class EncodingResult:
     c: int
     max_n: int
     level: Optional[int]
-
-    spiht_settings: SpihtSettings
 
 
 def get_slices_and_h_w(h: int, w: int, spiht_settings: SpihtSettings, level: Optional[int]):
@@ -173,13 +172,12 @@ def encode_image(image: np.ndarray, spiht_settings:SpihtSettings=SpihtSettings()
             c,
             max_n,
             level,
-            spiht_settings
         )
     
     return encoding_result
 
 
-def decode_image(encoding_result: EncodingResult) -> np.ndarray:
+def decode_image(encoding_result: EncodingResult, spiht_settings: SpihtSettings) -> np.ndarray:
     """
     Decodes the encoding_result to pixel values
     """
@@ -189,7 +187,6 @@ def decode_image(encoding_result: EncodingResult) -> np.ndarray:
     c = encoding_result.c
     max_n = encoding_result.max_n
     level = encoding_result.level
-    spiht_settings = encoding_result.spiht_settings
 
 
     slices, enc_h, enc_w = get_slices_and_h_w(h,w,spiht_settings,level)
