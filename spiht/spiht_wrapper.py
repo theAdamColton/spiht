@@ -14,6 +14,9 @@ def dequantize(arr, q_scale=10.):
     return arr / q_scale
 
 
+ENCODER_DECODER_VERSION = "0.0.1"
+
+
 @dataclass
 class SpihtSettings:
     """
@@ -75,6 +78,7 @@ class EncodingResult:
     c: int
     max_n: int
     level: Optional[int]
+    _encoding_version: str = ENCODER_DECODER_VERSION
 
 
 def get_slices_and_h_w(h: int, w: int, spiht_settings: SpihtSettings, level: Optional[int]):
@@ -188,6 +192,8 @@ def decode_image(encoding_result: EncodingResult, spiht_settings: SpihtSettings)
     max_n = encoding_result.max_n
     level = encoding_result.level
 
+    if encoding_result._encoding_version != ENCODER_DECODER_VERSION:
+        raise ValueError(encoding_result._encoding_version)
 
     slices, enc_h, enc_w = get_slices_and_h_w(h,w,spiht_settings,level)
     ll_h, ll_w = slices[0][1].stop, slices[0][2].stop
