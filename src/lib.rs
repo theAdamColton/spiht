@@ -11,6 +11,7 @@ use pyo3::{
 
 use encoder_decoder::{encode, decode};
 mod encoder_decoder;
+mod encoder_decoder_with_metadata;
 
 
 /// Encode DWT coefficients into bytes

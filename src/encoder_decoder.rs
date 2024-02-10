@@ -40,10 +40,10 @@ fn is_element_sig(x: i32, n: u8)  -> bool
     x.abs() >= (1i32 <<n)
 }
 
-fn get_offspring(i: usize, j: usize, h: usize, w: usize, ll_h: usize, ll_w: usize) -> Vec<(usize, usize)>{
+fn get_offspring(i: usize, j: usize, h: usize, w: usize, ll_h: usize, ll_w: usize) -> Option<[(usize,usize);4]> {
     if i < ll_h && j < ll_w {
         if i%2 == 0 && j%2 == 0 {
-            return vec![];
+            return None;
         }
         // index relative to the top left chunk corner
         // can be (0,0), (0,2), (2,0), (2,2)
@@ -54,26 +54,61 @@ fn get_offspring(i: usize, j: usize, h: usize, w: usize, ll_h: usize, ll_w: usiz
         let chunk_i = i % 2;
         let chunk_j = j%2;
 
-        return vec![
+        return Some([
                 (chunk_i * ll_h + sub_child_i, chunk_j * ll_w + sub_child_j),
                 (chunk_i * ll_h + sub_child_i, chunk_j * ll_w + sub_child_j + 1),
                 (chunk_i * ll_h + sub_child_i+1, chunk_j * ll_w + sub_child_j),
                 (chunk_i * ll_h + sub_child_i + 1, chunk_j * ll_w + sub_child_j + 1),
-                ]
+            ])
     }
 
     if 2*i+1 >= h || 2*j+1 >= w {
-        return vec![]
+        return None;
     }
 
-    return vec![
+    return Some([
             (2*i,2*j), 
             (2*i, 2*j+1),
             (2*i+1, 2*j),
             (2*i+1, 2*j+1),
-        ]
+        ])
 }
 
+
+//fn get_offspring(i: usize, j: usize, h: usize, w: usize, ll_h: usize, ll_w: usize) -> Vec<(usize, usize)>{
+//    if i < ll_h && j < ll_w {
+//        if i%2 == 0 && j%2 == 0 {
+//            return vec![];
+//        }
+//        // index relative to the top left chunk corner
+//        // can be (0,0), (0,2), (2,0), (2,2)
+//        let sub_child_i = i / 2 * 2;
+//        let sub_child_j = j/2 * 2;
+//
+//        // can be (0,1), (1,0) or (1,1)
+//        let chunk_i = i % 2;
+//        let chunk_j = j%2;
+//
+//        return vec![
+//                (chunk_i * ll_h + sub_child_i, chunk_j * ll_w + sub_child_j),
+//                (chunk_i * ll_h + sub_child_i, chunk_j * ll_w + sub_child_j + 1),
+//                (chunk_i * ll_h + sub_child_i+1, chunk_j * ll_w + sub_child_j),
+//                (chunk_i * ll_h + sub_child_i + 1, chunk_j * ll_w + sub_child_j + 1),
+//                ]
+//    }
+//
+//    if 2*i+1 >= h || 2*j+1 >= w {
+//        return vec![]
+//    }
+//
+//    return vec![
+//            (2*i,2*j), 
+//            (2*i, 2*j+1),
+//            (2*i+1, 2*j),
+//            (2*i+1, 2*j+1),
+//        ]
+//}
+//
 fn is_set_sig(arr: ArrayView3<i32>,k: usize,i: usize,j:usize,n:u8, ll_h: usize, ll_w: usize) -> bool {
     let shape = arr.shape();
 
@@ -84,9 +119,13 @@ fn is_set_sig(arr: ArrayView3<i32>,k: usize,i: usize,j:usize,n:u8, ll_h: usize, 
         return true
     }
 
-    for (l,m) in get_offspring(i,j,h,w, ll_h, ll_w) {
-        if is_set_sig(arr,k,l,m,n,ll_h, ll_w) {
-            return true
+    let offspring = get_offspring(i,j,h,w, ll_h, ll_w);
+
+    if let Some(offspring) = offspring {
+        for (l,m) in offspring {
+            if is_set_sig(arr,k,l,m,n,ll_h, ll_w) {
+                return true
+            }
         }
     }
 
@@ -100,11 +139,15 @@ fn is_l_sig(arr: ArrayView3<i32>,k: usize,i: usize,j:usize,n:u8, ll_h: usize, ll
     let w = shape[shape.len() - 1];
 
     let offspring = get_offspring(i, j, h, w, ll_h, ll_w);
-    for (l,m) in offspring {
-        let secondary_offspring = get_offspring(l, m, h, w, ll_h, ll_w);
-        for (ll,mm) in secondary_offspring {
-            if is_set_sig(arr, k, ll, mm, n, ll_h, ll_w) {
-                return true
+    if let Some(offspring) = offspring {
+        for (l,m) in offspring {
+            let secondary_offspring = get_offspring(l, m, h, w, ll_h, ll_w);
+            if let Some(secondary_offspring) = secondary_offspring {
+                for (ll,mm) in secondary_offspring {
+                    if is_set_sig(arr, k, ll, mm, n, ll_h, ll_w) {
+                        return true
+                    }
+                }
             }
         }
     }
@@ -181,10 +224,12 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
                 // type A
                 let mut desc_sig = false;
                 let offspring = get_offspring(i,j,h,w,ll_h,ll_w);
-                for (l,m) in offspring.to_owned() {
-                    if is_set_sig(arr, k, l, m, n, ll_h, ll_w) {
-                        desc_sig = true;
-                        break;
+                if let Some(offspring) = offspring {
+                    for (l,m) in offspring {
+                        if is_set_sig(arr, k, l, m, n, ll_h, ll_w) {
+                            desc_sig = true;
+                            break;
+                        }
                     }
                 }
 
@@ -194,7 +239,7 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
                 }
 
                 if desc_sig {
-                    for (l,m) in offspring {
+                    for (l,m) in offspring.unwrap() {
                         let sig = is_element_sig(arr[(k,l,m)], n);
 
                         data.push(sig);
@@ -234,8 +279,11 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
                 }
 
                 if l_sig {
-                    for (l,m) in get_offspring(i, j, h, w, ll_h, ll_w) {
-                        lis.push_back((true,k,l,m));
+                    let offspring = get_offspring(i, j, h, w, ll_h, ll_w);
+                    if let Some(offspring) = offspring {
+                        for (l,m) in offspring {
+                            lis.push_back((true,k,l,m));
+                        }
                     }
                 } else {
                     lis_retain.push_back((t,k,i,j));
@@ -361,36 +409,39 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
                 }
 
                 if desc_sig {
-                    for (l,m) in get_offspring(i, j, h, w, ll_h, ll_w) {
-                        let sig: bool;
-                        if let Some(x) = pop_front() {
-                            sig = x;
-                        } else {
-                            return rec_arr
-                        }
-
-                        if sig {
-                            lsp.push_back((k,l,m));
-
-                            let sign: i32;
+                    let offspring = get_offspring(i, j, h, w, ll_h, ll_w);
+                    if let Some(offspring) = offspring {
+                        for (l,m) in offspring {
+                            let sig: bool;
                             if let Some(x) = pop_front() {
-                                // -1 or 1
-                                sign = x as i32 * 2 -1;
+                                sig = x;
                             } else {
                                 return rec_arr
                             }
 
-                            let base_sig: i32;
-                            if n==0 {
-                                base_sig = 1<<n;
-                            } else {
-                                // should be eq to 1.5 * 2 ^ n
-                                base_sig = (1 << (n-1)) + (1<<n);
-                            }
+                            if sig {
+                                lsp.push_back((k,l,m));
 
-                            rec_arr[(k,l,m)] = sign * base_sig;
-                        } else {
-                            lip.push_back((k,l,m));
+                                let sign: i32;
+                                if let Some(x) = pop_front() {
+                                    // -1 or 1
+                                    sign = x as i32 * 2 -1;
+                                } else {
+                                    return rec_arr
+                                }
+
+                                let base_sig: i32;
+                                if n==0 {
+                                    base_sig = 1<<n;
+                                } else {
+                                    // should be eq to 1.5 * 2 ^ n
+                                    base_sig = (1 << (n-1)) + (1<<n);
+                                }
+
+                                rec_arr[(k,l,m)] = sign * base_sig;
+                            } else {
+                                lip.push_back((k,l,m));
+                            }
                         }
                     }
 
@@ -413,8 +464,11 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
                 }
 
                 if l_sig {
-                    for (l,m) in get_offspring(i, j, h, w, ll_h, ll_w) {
-                        lis.push_back((true,k,l,m));
+                    let offspring = get_offspring(i, j, h, w, ll_h, ll_w);
+                    if let Some(offspring) = offspring {
+                        for (l,m) in offspring {
+                            lis.push_back((true,k,l,m));
+                        }
                     }
                 } else {
                     lis_retain.push_back((t,k,i,j));
@@ -436,7 +490,6 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
             rec_arr[(k,i,j)] = set_bit(rec_arr[(k,i,j)], n,bit);
         }
 
-
         if n==0 {
             break;
         }
@@ -446,6 +499,53 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
 
     rec_arr
 }
+
+
+
+
+pub struct Slice{
+    start_i: usize,
+    end_i: usize,
+    start_j: usize,
+    end_j: usize,
+}
+
+impl Slice {
+    pub fn contains(&self, i: usize, j: usize) -> bool {
+        i >= self.start_i && i < self.end_i && j >= self.start_j && j < self.end_j
+    }
+}
+
+pub struct OtherSlice {
+    da: Slice,
+    ad: Slice,
+    dd: Slice
+}
+
+pub struct Slices{
+    top_slice: Slice,
+    other_slices:Vec<OtherSlice>
+}
+
+enum Filter {
+    LL = 0,
+    DA = 1,
+    AD = 2,
+    DD = 3
+}
+
+pub fn decode_with_metadata(
+    data:BitVec,
+    mut n:u8,
+    c: usize,
+    h:usize,
+    w:usize,
+    slices: Slices,
+    ) {
+}
+
+
+
 
 
 
