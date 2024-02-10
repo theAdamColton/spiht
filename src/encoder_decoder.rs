@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use ndarray::{ArrayView3, Array3};
+use ndarray::{Array2, Array3, ArrayView3};
 use ndarray_stats::QuantileExt;
 use bitvec::vec::BitVec;
 
@@ -75,40 +75,6 @@ fn get_offspring(i: usize, j: usize, h: usize, w: usize, ll_h: usize, ll_w: usiz
 }
 
 
-//fn get_offspring(i: usize, j: usize, h: usize, w: usize, ll_h: usize, ll_w: usize) -> Vec<(usize, usize)>{
-//    if i < ll_h && j < ll_w {
-//        if i%2 == 0 && j%2 == 0 {
-//            return vec![];
-//        }
-//        // index relative to the top left chunk corner
-//        // can be (0,0), (0,2), (2,0), (2,2)
-//        let sub_child_i = i / 2 * 2;
-//        let sub_child_j = j/2 * 2;
-//
-//        // can be (0,1), (1,0) or (1,1)
-//        let chunk_i = i % 2;
-//        let chunk_j = j%2;
-//
-//        return vec![
-//                (chunk_i * ll_h + sub_child_i, chunk_j * ll_w + sub_child_j),
-//                (chunk_i * ll_h + sub_child_i, chunk_j * ll_w + sub_child_j + 1),
-//                (chunk_i * ll_h + sub_child_i+1, chunk_j * ll_w + sub_child_j),
-//                (chunk_i * ll_h + sub_child_i + 1, chunk_j * ll_w + sub_child_j + 1),
-//                ]
-//    }
-//
-//    if 2*i+1 >= h || 2*j+1 >= w {
-//        return vec![]
-//    }
-//
-//    return vec![
-//            (2*i,2*j), 
-//            (2*i, 2*j+1),
-//            (2*i+1, 2*j),
-//            (2*i+1, 2*j+1),
-//        ]
-//}
-//
 fn is_set_sig(arr: ArrayView3<i32>,k: usize,i: usize,j:usize,n:u8, ll_h: usize, ll_w: usize) -> bool {
     let shape = arr.shape();
 
@@ -501,32 +467,6 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
 }
 
 
-
-
-pub struct Slice{
-    start_i: usize,
-    end_i: usize,
-    start_j: usize,
-    end_j: usize,
-}
-
-impl Slice {
-    pub fn contains(&self, i: usize, j: usize) -> bool {
-        i >= self.start_i && i < self.end_i && j >= self.start_j && j < self.end_j
-    }
-}
-
-pub struct OtherSlice {
-    da: Slice,
-    ad: Slice,
-    dd: Slice
-}
-
-pub struct Slices{
-    top_slice: Slice,
-    other_slices:Vec<OtherSlice>
-}
-
 enum Filter {
     LL = 0,
     DA = 1,
@@ -534,17 +474,271 @@ enum Filter {
     DD = 3
 }
 
+struct CoefficientMetadata {
+    depth: u8,
+    filter: u8,
+    channel: usize,
+    height: usize,
+    width: usize,
+}
+
+impl CoefficientMetadata {
+    fn global_coords(&self) -> (usize,usize,usize) {
+        (self.channel, self.height, self.width)
+    }
+
+    fn get_offspring_filter(&self) -> u8 {
+        let filter = self.filter;
+        if filter == Filter::LL as u8 {
+            debug_assert!(!(self.height % 2 == 0 && self.width % 2 == 0));
+            if self.height % 2 == 1 && self.width % 2 == 1 {
+                return Filter::DD as u8;
+            } else if self.height % 2 == 0 && self.width % 2 != 0 {
+                return Filter::AD as u8;
+            } else {
+                return Filter::DA as u8;
+            }
+        }
+        filter
+    }
+}
+
+
+fn get_level(mut h:usize, mut w:usize,ll_h: usize, ll_w: usize) -> u8 {
+    let mut level = 0;
+    while h > ll_h && w > ll_w {
+        h /= 2;
+        w /= 2;
+        level += 1;
+    }
+    level
+}
+
+/// Spiht metadata, which is a 8 length torch.LongTensor vector
+///  This contains the following:
+///    a: action ID, from 0 to 6 (inclusive)
+///    h: next coeff height as a relative position in the filter
+///    w: next coeff width as a relative position in the filter
+///    c: next coeff channel
+///    f: next coeff filter, as an integer from 0 to 3 (inclusive)
+///        0 being the 'll' top level, and then in order: H, V, D
+///        'll', 'da', 'ad', 'dd' is mapped to: 0, 1, 2, 3
+///    d: next coeff filter depth
+///    n: next coeff n value (the variable n)
+///    x: next value of the coefficient in the rec_arr
 pub fn decode_with_metadata(
     data:BitVec,
     mut n:u8,
     c: usize,
     h:usize,
     w:usize,
-    slices: Slices,
-    ) {
+    ll_h: usize,
+    ll_w: usize,
+    ) -> (Array3<i32>, Array2<i32>) {
+    let mut rec_arr = Array3::<i32>::zeros((c,h,w));
+    let mut metadata_arr = Array2::<i32>::zeros((data.len(), 8));
+
+    assert!(ll_h > 1);
+    assert!(ll_w > 1);
+
+    let mut cur_i = 0;
+    let mut pop_front = || {
+        let ret: Option<bool>;
+        if cur_i >= data.len() {
+            ret = None
+        } else {
+            ret = Some(data[cur_i]);
+        }
+        cur_i += 1;
+        return ret
+    };
+
+    let level = get_level(h, w, ll_h, ll_w);
+
+    let mut lsp: VecDeque<CoefficientMetadata> = VecDeque::new();
+    let mut lip: VecDeque<CoefficientMetadata> = VecDeque::new();
+    for i in 0..ll_h {
+        for j in 0..ll_w {
+            for k in 0..c {
+                lip.push_back(
+                    // TODO!
+                    // Probably can get better bitrate if channels was at the top of the nested
+                    // loop, especially in the case of color models like IPT, where the first
+                    // channel dominates
+                    CoefficientMetadata { depth: level, filter: Filter::LL as u8, channel: k, height: i, width: j }
+                    );
+            }
+        }
+    }
+
+    // true=type A, false = type B
+    let mut lis: VecDeque<(bool,CoefficientMetadata)> = VecDeque::new();
+    for i in 0..ll_h {
+        for j in 0..ll_w {
+            if i%2 == 0 && j%2 == 0 {
+                continue;
+            }
+            for k in 0..c {
+                lis.push_back((true, CoefficientMetadata{depth: level, filter: Filter::LL as u8, channel:k, height:i, width: j}));
+            }
+        }
+    }
+
+
+    
+    loop {
+        let lsp_len = lsp.len();
+
+        let mut lip_retain: VecDeque<CoefficientMetadata> = VecDeque::new();
+        for coefficient in lip {
+            // action 0
+            let is_sig:bool;
+            if let Some(x) = pop_front() {
+                is_sig=x;
+            } else {
+                return (rec_arr, metadata_arr)
+            }
+
+            if is_sig {
+                // action 1
+                let sign:i32;
+                if let Some(x) = pop_front() {
+                    // -1 or 1
+                    sign = x as i32 * 2 - 1;
+                } else {
+                    return (rec_arr, metadata_arr)
+                }
+
+                let base_sig: i32;
+                if n==0 {
+                    base_sig = 1<<n;
+                } else {
+                    // should be eq to 1.5 * 2 ^ n
+                    base_sig = (1 << (n-1)) + (1<<n);
+                }
+
+                rec_arr[coefficient.global_coords()] = base_sig * sign;
+                lsp.push_back(coefficient);
+            } else {
+                lip_retain.push_back(coefficient);
+            }
+        }
+        lip = lip_retain;
+
+        let mut lis_retain: VecDeque<(bool,CoefficientMetadata)> = VecDeque::new();
+        while let Some((t,coefficient)) = lis.pop_front() {
+            if t {
+                // type A
+                // action 2
+                let desc_sig:bool;
+                if let Some(x) = pop_front() {
+                    desc_sig = x;
+                } else {
+                    return (rec_arr, metadata_arr)
+                }
+
+                if desc_sig {
+                    let offspring = get_offspring(coefficient.height, coefficient.width, h, w, ll_h, ll_w);
+                    if let Some(offspring) = offspring {
+                        for (l,m) in offspring {
+                            // action 3
+                            let sig: bool;
+                            if let Some(x) = pop_front() {
+                                sig = x;
+                            } else {
+                                return (rec_arr, metadata_arr)
+                            }
+
+                            let new_coeff = CoefficientMetadata {depth: coefficient.depth - 1, channel: coefficient.channel, height: l, width: m, filter: coefficient.get_offspring_filter()};
+                            if sig {
+                                // action 4
+                                let sign: i32;
+                                if let Some(x) = pop_front() {
+                                    // -1 or 1
+                                    sign = x as i32 * 2 -1;
+                                } else {
+                                    return (rec_arr, metadata_arr)
+                                }
+
+                                let base_sig: i32;
+                                if n==0 {
+                                    base_sig = 1<<n;
+                                } else {
+                                    // should be eq to 1.5 * 2 ^ n
+                                    base_sig = (1 << (n-1)) + (1<<n);
+                                }
+
+                                rec_arr[new_coeff.global_coords()] = sign * base_sig;
+                                lsp.push_back(new_coeff);
+                            } else {
+                                lip.push_back(new_coeff);
+                            }
+                        }
+                    }
+
+                    let l_exists = has_descendents_past_offspring(coefficient.height,coefficient.width,h,w);
+                    if l_exists {
+                        lis.push_back((false, coefficient));
+                    }
+                } else {
+                    lis_retain.push_back((t,coefficient));
+                }
+
+
+            } else {
+                // type B
+                // action 5
+                let l_sig: bool;
+                if let Some(x) = pop_front() {
+                    l_sig = x;
+                } else {
+                    return (rec_arr, metadata_arr)
+                }
+
+                if l_sig {
+                    let offspring = get_offspring(coefficient.height, coefficient.width, h, w, ll_h, ll_w);
+                    if let Some(offspring) = offspring {
+                        for (l,m) in offspring {
+                            let new_coeff = CoefficientMetadata {
+                                channel: coefficient.channel,
+                                height: l,
+                                width: m,
+                                depth: coefficient.depth-1,
+                                filter: coefficient.get_offspring_filter(),
+                            };
+                            lis.push_back((true,new_coeff));
+                        }
+                    }
+                } else {
+                    lis_retain.push_back((t,coefficient));
+                }
+            }
+        }
+        lis = lis_retain;
+
+        // refinement
+        for lsp_i in 0..lsp_len {
+            let coefficient = &lsp[lsp_i];
+            // action 6
+            let bit:bool;
+            if let Some(x) = pop_front() {
+                bit = x;
+            } else {
+                return (rec_arr,metadata_arr);
+            }
+
+            rec_arr[coefficient.global_coords()] = set_bit(rec_arr[coefficient.global_coords()], n,bit);
+        }
+
+        if n==0 {
+            break;
+        }
+
+        n-= 1;
+    }
+
+    (rec_arr, metadata_arr)
 }
-
-
 
 
 
@@ -632,6 +826,25 @@ mod tests {
             assert_eq!(arr, rec_data);
         }
     }
+
+    #[test]
+    fn test_encode_decode_many_random_metadata() {
+        let rng = &mut SmallRng::seed_from_u64(42);
+
+        let ll_h = 2;
+        let ll_w = 2;
+        let h = 8;
+        let w = 8;
+        let c = 1;
+        for _ in 0..20 {
+            let arrf = Array3::random_using((c,h,w), Normal::new(0.,16.).unwrap(), rng);
+            let arr = arrf.mapv(|x| x as i32);
+            let (data, max_n) = encode(arr.view(), ll_h, ll_w, 10000000);
+            let (rec_data,_) = decode_with_metadata(data, max_n, c, h, w, ll_h, ll_w);
+            assert_eq!(arr, rec_data);
+        }
+    }
+
 
     #[test]
     fn test_encode_decode_many_random() {
