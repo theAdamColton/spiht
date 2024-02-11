@@ -429,6 +429,7 @@ enum Filter {
     DD = 3
 }
 
+#[derive(Debug)]
 struct CoefficientMetadata {
     depth: u8,
     filter: u8,
@@ -437,6 +438,7 @@ struct CoefficientMetadata {
     width: usize,
 }
 
+#[derive(Debug)]
 pub struct Slice {
     start_i: usize,
     end_i: usize,
@@ -444,12 +446,10 @@ pub struct Slice {
     end_j: usize
 }
 
-pub struct OtherSlice {
-    da:Slice,
-    ad:Slice,
-    dd:Slice,
-}
+#[derive(Debug)]
+pub struct OtherSlice([Slice; 3]);
 
+#[derive(Debug)]
 pub struct Slices {
     top_slice: Slice,
     other_slices: Vec<OtherSlice>,
@@ -465,26 +465,29 @@ impl Slices {
             debug_assert!(filter_slices[1].len() == 2);
             debug_assert!(filter_slices[2].len() == 2);
 
-            let other_slice = OtherSlice {
-                da: Slice {
+            let other_slice = OtherSlice([
+                //ad
+                Slice {
                     start_i: filter_slices[0][0].0,
                     end_i: filter_slices[0][0].1,
                     start_j: filter_slices[0][1].0,
                     end_j: filter_slices[0][1].1,
                 },
-                ad: Slice {
+                //da
+                Slice {
                     start_i: filter_slices[1][0].0,
                     end_i: filter_slices[1][0].1,
                     start_j: filter_slices[1][1].0,
                     end_j: filter_slices[1][1].1,
                 },
-                dd: Slice {
+                //dd
+                Slice {
                     start_i: filter_slices[2][0].0,
                     end_i: filter_slices[2][0].1,
                     start_j: filter_slices[2][1].0,
                     end_j: filter_slices[2][1].1,
                 }
-            };
+            ]);
 
             other_slices.push(other_slice);
         }
@@ -500,7 +503,7 @@ impl Slices {
         }
     }
 
-    fn new_basic(mut level: u8, mut h:usize, mut w:usize) -> Self {
+    fn new_basic(mut level: u8, h:usize, w:usize) -> Self {
         let mut all_other_slices = Vec::new();
         let mut new_h=h;
         let mut new_w=w;
@@ -508,26 +511,29 @@ impl Slices {
             new_h = h / 2;
             new_w = w / 2;
 
-            let other_slices = OtherSlice{
-                ad: Slice {
+            let other_slices = OtherSlice([
+                //ad
+                Slice {
                     start_i: 0,
                     end_i: new_h,
                     start_j: new_w,
                     end_j: w,
                 },
-                da: Slice {
+                //da
+                Slice {
                     start_i: new_h,
                     end_i: h,
                     start_j: 0,
                     end_j: new_w,
                 },
-                dd: Slice {
+                //dd
+                Slice {
                     start_i: new_h,
                     end_i: h,
                     start_j: new_w,
                     end_j: w
                 }
-            };
+            ]);
 
             all_other_slices.push(other_slices);
 
@@ -582,6 +588,24 @@ fn get_level(mut h:usize, mut w:usize,ll_h: usize, ll_w: usize) -> u8 {
     level
 }
 
+fn get_local_position(coefficient: &CoefficientMetadata, slices: &Slices, level: u8) -> (i32, i32) {
+    let local_w: f32;
+    let local_h: f32;
+    if coefficient.depth == level {
+        debug_assert!(coefficient.filter == 0);
+        local_h = coefficient.height as f32 / slices.top_slice.end_i as f32;
+        local_w = coefficient.width as f32 / slices.top_slice.end_j as f32;
+    } else {
+        let depth_i = level - 1 - coefficient.depth;
+        let filter_i = coefficient.filter as usize - 1;
+        let filter_slice = &slices.other_slices[depth_i as usize].0[filter_i];
+        local_h = (coefficient.height as f32 - filter_slice.start_i as f32) / ((filter_slice.end_i - filter_slice.start_i) as f32);
+        local_w = (coefficient.width as f32 - filter_slice.start_j as f32) / ((filter_slice.end_j - filter_slice.start_j) as f32);
+    }
+
+    ((local_w * 100_000.) as i32, (local_h * 100_000.) as i32)
+}
+
 /// Spiht metadata, which is a 8 length torch.LongTensor vector
 ///  This contains the following:
 ///    a: action ID, from 0 to 6 (inclusive)
@@ -624,6 +648,9 @@ pub fn decode_with_metadata(
         };
     }
 
+
+    let level = slices.other_slices.len() as u8;
+
     macro_rules! assign_metadata {
         ( $action:expr, $coefficient:expr) => {
             {
@@ -631,9 +658,12 @@ pub fn decode_with_metadata(
                     return (rec_arr, metadata_arr);
                 }
 
+                //println!("{:?} {:?} {}", $coefficient, &slices, level);
+                let (local_h, local_w) = get_local_position(&$coefficient, &slices, level);
+
                 metadata_arr[(cur_i,0)] = $action;
-                metadata_arr[(cur_i,1)] = $coefficient.height as i32;
-                metadata_arr[(cur_i,2)] = $coefficient.width as i32;
+                metadata_arr[(cur_i,1)] = local_h;
+                metadata_arr[(cur_i,2)] = local_w;
                 metadata_arr[(cur_i,3)] = $coefficient.channel as i32;
                 metadata_arr[(cur_i,4)] = $coefficient.filter as i32;
                 metadata_arr[(cur_i,5)] = $coefficient.depth as i32;
@@ -643,8 +673,6 @@ pub fn decode_with_metadata(
         };
     }
 
-
-    let level = slices.other_slices.len() as u8;
 
     let mut lsp: VecDeque<CoefficientMetadata> = VecDeque::new();
     let mut lip: VecDeque<CoefficientMetadata> = VecDeque::new();
@@ -688,6 +716,7 @@ pub fn decode_with_metadata(
 
             if is_sig {
                 // action 1
+                assign_metadata!(1,coefficient);
                 let sign:i32 = pop_bit!() as i32 * 2 - 1;
 
                 let base_sig: i32;
@@ -711,18 +740,21 @@ pub fn decode_with_metadata(
             if t {
                 // type A
                 // action 2
+                assign_metadata!(2,coefficient);
                 let desc_sig:bool = pop_bit!();
 
                 if desc_sig {
                     let offspring = get_offspring(coefficient.height, coefficient.width, h, w, ll_h, ll_w);
                     if let Some(offspring) = offspring {
                         for (l,m) in offspring {
-                            // action 3
-                            let sig: bool = pop_bit!();
-
                             let new_coeff = CoefficientMetadata {depth: coefficient.depth - 1, channel: coefficient.channel, height: l, width: m, filter: coefficient.get_offspring_filter()};
+
+                            // action 3
+                            assign_metadata!(3,new_coeff);
+                            let sig: bool = pop_bit!();
                             if sig {
                                 // action 4
+                                assign_metadata!(4,new_coeff);
                                 let sign: i32 = pop_bit!() as i32 * 2 - 1;
 
                                 let base_sig: i32;
@@ -753,6 +785,7 @@ pub fn decode_with_metadata(
             } else {
                 // type B
                 // action 5
+                assign_metadata!(5,coefficient);
                 let l_sig: bool = pop_bit!();
 
                 if l_sig {
@@ -780,6 +813,7 @@ pub fn decode_with_metadata(
         for lsp_i in 0..lsp_len {
             let coefficient = &lsp[lsp_i];
             // action 6
+            assign_metadata!(6,coefficient);
             let bit:bool = pop_bit!();
 
             rec_arr[coefficient.global_coords()] = set_bit(rec_arr[coefficient.global_coords()], n,bit);
