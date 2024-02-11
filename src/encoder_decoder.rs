@@ -288,17 +288,31 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
     assert!(ll_h > 1);
     assert!(ll_w > 1);
 
+    //let mut cur_i = 0;
+    //let mut pop_front = || {
+    //    let ret: Option<bool>;
+    //    if cur_i >= data.len() {
+    //        ret = None
+    //    } else {
+    //        ret = Some(data[cur_i]);
+    //    }
+    //    cur_i += 1;
+    //    return ret
+    //};
+
     let mut cur_i = 0;
-    let mut pop_front = || {
-        let ret: Option<bool>;
-        if cur_i >= data.len() {
-            ret = None
-        } else {
-            ret = Some(data[cur_i]);
-        }
-        cur_i += 1;
-        return ret
-    };
+    macro_rules! pop_bit {
+        ( ) => {
+            {
+                if cur_i >= data.len() {
+                    return rec_arr;
+                }
+                let value = data[cur_i];
+                cur_i += 1;
+                value
+            }
+        };
+    }
 
     let mut lsp: VecDeque<(usize,usize,usize)> = VecDeque::new();
     let mut lip: VecDeque<(usize,usize,usize)> = VecDeque::new();
@@ -330,23 +344,12 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
 
         let mut lip_retain: VecDeque<(usize,usize,usize)> = VecDeque::new();
         for (k,i,j) in lip {
-            let is_sig:bool;
-            if let Some(x) = pop_front() {
-                is_sig=x;
-            } else {
-                return rec_arr
-            }
+            let is_sig:bool = pop_bit!();
 
             if is_sig {
                 lsp.push_back((k,i,j));
 
-                let sign:i32;
-                if let Some(x) = pop_front() {
-                    // -1 or 1
-                    sign = x as i32 * 2 - 1;
-                } else {
-                    return rec_arr
-                }
+                let sign:i32 = pop_bit!() as i32 * 2 - 1;
 
                 let base_sig: i32;
                 if n==0 {
@@ -367,34 +370,18 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
         while let Some((t,k,i,j)) = lis.pop_front() {
             if t {
                 // type A
-                let desc_sig:bool;
-                if let Some(x) = pop_front() {
-                    desc_sig = x;
-                } else {
-                    return rec_arr
-                }
+                let desc_sig:bool = pop_bit!();
 
                 if desc_sig {
                     let offspring = get_offspring(i, j, h, w, ll_h, ll_w);
                     if let Some(offspring) = offspring {
                         for (l,m) in offspring {
-                            let sig: bool;
-                            if let Some(x) = pop_front() {
-                                sig = x;
-                            } else {
-                                return rec_arr
-                            }
+                            let sig: bool = pop_bit!();
 
                             if sig {
                                 lsp.push_back((k,l,m));
 
-                                let sign: i32;
-                                if let Some(x) = pop_front() {
-                                    // -1 or 1
-                                    sign = x as i32 * 2 -1;
-                                } else {
-                                    return rec_arr
-                                }
+                                let sign: i32 = pop_bit!() as i32 * 2 - 1;
 
                                 let base_sig: i32;
                                 if n==0 {
@@ -422,12 +409,7 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
 
             } else {
                 // type B
-                let l_sig: bool;
-                if let Some(x) = pop_front() {
-                    l_sig = x;
-                } else {
-                    return rec_arr
-                }
+                let l_sig: bool = pop_bit!();
 
                 if l_sig {
                     let offspring = get_offspring(i, j, h, w, ll_h, ll_w);
@@ -446,12 +428,7 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
         // refinement
         for lsp_i in 0..lsp_len {
             let (k,i,j) = lsp[lsp_i];
-            let bit:bool;
-            if let Some(x) = pop_front() {
-                bit = x;
-            } else {
-                return rec_arr;
-            }
+            let bit:bool = pop_bit!();
 
             rec_arr[(k,i,j)] = set_bit(rec_arr[(k,i,j)], n,bit);
         }
