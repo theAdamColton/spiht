@@ -1,3 +1,4 @@
+import numpy as np
 import unittest
 import os
 
@@ -21,7 +22,7 @@ class Tests(unittest.TestCase):
             spiht_settings = SpihtSettings()
             encoded = encode_image(image, spiht_settings=spiht_settings)
             decoded_image, spiht_metadata = decode_image(encoded, spiht_settings, return_metadata=True)
-            import bpdb
-            bpdb.set_trace()
+            decoded_image_2 = decode_image(encoded, spiht_settings, return_metadata=False)
+            self.assertTrue(np.allclose(decoded_image, decoded_image_2))
             # Uncomment the following line to get the script to show the two images
-            imshow(decoded_image)
+            #imshow(decoded_image)

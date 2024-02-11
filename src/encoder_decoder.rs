@@ -610,6 +610,9 @@ fn get_local_position(coefficient: &CoefficientMetadata, slices: &Slices, level:
 }
 
 
+/// h: Height of array to construct
+/// w: Width of array to construct
+///
 /// Spiht metadata, which is a 8 length torch.LongTensor vector
 ///  This contains the following:
 ///    a: action ID, from 0 to 6 (inclusive)
@@ -662,8 +665,7 @@ pub fn decode_with_metadata(
                     return (rec_arr, metadata_arr);
                 }
 
-                //println!("{:?} {:?} {}", $coefficient, &slices, level);
-                let (local_h, local_w) = get_local_position(&$coefficient, &slices, level);
+                let (local_h, local_w) = ($coefficient.height as i32, $coefficient.width as i32);
 
                 metadata_arr[(cur_i,0)] = $action;
                 metadata_arr[(cur_i,1)] = local_h;
@@ -706,7 +708,6 @@ pub fn decode_with_metadata(
             }
         }
     }
-
 
     
     loop {
@@ -777,7 +778,8 @@ pub fn decode_with_metadata(
                         }
                     }
 
-                    let l_exists = has_descendents_past_offspring(coefficient.height,coefficient.width,h,w);
+                    // has_descendents_past_offspring
+                    let l_exists = coefficient.depth > 1;
                     if l_exists {
                         lis.push_back((false, coefficient));
                     }
@@ -832,7 +834,6 @@ pub fn decode_with_metadata(
 
     (rec_arr, metadata_arr)
 }
-
 
 
 
@@ -919,6 +920,26 @@ mod tests {
             assert_eq!(arr, rec_data);
         }
     }
+
+    #[test]
+    fn test_encode_decode_many_random_large_metadata() {
+        let rng = &mut SmallRng::seed_from_u64(42);
+
+        let ll_h = 2;
+        let ll_w = 2;
+        let h = 32;
+        let w = 32;
+        let c = 4;
+        for _ in 0..50 {
+            let arrf = Array3::random_using((c,h,w), Normal::new(0.,16.).unwrap(), rng);
+            let arr = arrf.mapv(|x| x as i32);
+            let (data, max_n) = encode(arr.view(), ll_h, ll_w, 10000000);
+            let slices = Slices::new_basic(4, h, w);
+            let (rec_data, _) = decode_with_metadata(data, max_n, c, h, w, ll_h, ll_w, slices);
+            assert_eq!(arr, rec_data);
+        }
+    }
+
 
     #[test]
     fn test_encode_decode_many_random_metadata() {

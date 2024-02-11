@@ -12,6 +12,13 @@ use pyo3::{
 use encoder_decoder::{decode, decode_with_metadata, encode, Slices};
 mod encoder_decoder;
 
+fn bytes_to_bits(bytes: Vec<u8>) -> BitVec {
+    let mut data = BitVec::repeat(false, bytes.len() * 8);
+    for (slot, byte) in data.chunks_mut(8).zip(bytes.into_iter()) {
+      slot.store_le(byte);
+    }
+    data
+}
 
 /// Encode DWT coefficients into bytes
 #[pyfunction]
@@ -28,10 +35,7 @@ fn encode_spiht(py: Python, x: PyReadonlyArray3<i32>, ll_h: usize, ll_w: usize, 
 #[pyfunction]
 #[pyo3(name="decode")]
 fn decode_spiht<'py>(py: Python<'py>, data_u8: Vec<u8>, n: u8, c: usize, h: usize, w: usize, ll_h: usize, ll_w: usize) -> &'py PyArray<i32, Dim<[usize; 3]>> {
-    let mut data = BitVec::repeat(false, data_u8.len() * 8);
-    for (slot, byte) in data.chunks_mut(8).zip(data_u8.into_iter()) {
-      slot.store_le(byte);
-    }
+    let data = bytes_to_bits(data_u8);
 
     let rec_arr = decode(data, n, c, h, w, ll_h, ll_w);
     rec_arr.to_pyarray(py)
@@ -43,10 +47,7 @@ fn decode_spiht<'py>(py: Python<'py>, data_u8: Vec<u8>, n: u8, c: usize, h: usiz
 #[pyfunction]
 #[pyo3(name="decode_with_metadata")]
 fn decode_spiht_with_metadata<'py>(py:Python<'py>, data_u8: Vec<u8>, n: u8, c: usize, h: usize, w:usize, ll_h: usize, ll_w: usize, top_slice: Vec<(usize, usize)>, other_slices: Vec<Vec<Vec<(usize, usize)>>>) -> (&'py PyArray<i32, Dim<[usize; 3]>>, &'py PyArray<i32, Dim<[usize; 2]>>){
-    let mut data = BitVec::repeat(false, data_u8.len() * 8);
-    for (slot, byte) in data.chunks_mut(8).zip(data_u8.into_iter()) {
-      slot.store_le(byte);
-    }
+    let data = bytes_to_bits(data_u8);
 
     let slices = Slices::from_vec(top_slice, other_slices);
 
