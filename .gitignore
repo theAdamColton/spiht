@@ -1,5 +1,6 @@
 .DS_Store
 *.gif
+*.png
 *.m4a
 *.mp4
 **/*/__pycache__/

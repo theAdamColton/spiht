@@ -14,7 +14,7 @@ def dequantize(arr, q_scale=10.):
     return arr / q_scale
 
 
-ENCODER_DECODER_VERSION = "0.0.1"
+ENCODER_DECODER_VERSION = "0.0.2"
 
 
 @dataclass

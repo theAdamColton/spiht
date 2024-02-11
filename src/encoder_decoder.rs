@@ -5,10 +5,10 @@ use ndarray_stats::QuantileExt;
 use bitvec::vec::BitVec;
 
 fn has_descendents_past_offspring(i:usize,j:usize,h:usize,w:usize) -> bool {
-    if 2*i + 1 >= h || 2*j + 1 >= w {
+    if (i * 2 + 1) * 2 + 1 >= h || (j * 2 + 1) * 2 + 1 >= w {
         return false
-    } 
-    return true
+    }
+    true
 }
 
 fn set_bit(x: i32, n: u8, bit: bool) -> i32 {
@@ -450,10 +450,6 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
         n-= 1;
     }
 
-    let extra_bits = data.len() as i32 - 1 - cur_i as i32;
-    if extra_bits > 0 {
-        println!("SPIHT DECODER EXHAUSTED extra bits {extra_bits}");
-    }
     rec_arr
 }
 
@@ -837,11 +833,6 @@ pub fn decode_with_metadata(
         }
 
         n-= 1;
-    }
-
-    let extra_bits = data.len() as i32 - 1 - cur_i as i32;
-    if extra_bits > 0 {
-        println!("SPIHT METADATA DECODER EXHAUSTED extra bits {extra_bits}");
     }
 
     (rec_arr, metadata_arr)
