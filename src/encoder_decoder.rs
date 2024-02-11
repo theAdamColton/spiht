@@ -157,6 +157,17 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
         }
     }
 
+    macro_rules! push_bit {
+        ( $bit:expr ) => {
+            {
+                data.push($bit);
+                if data.len() == max_bits {
+                    return (data, max_n)
+                }
+            }
+        };
+    }
+
     
     loop {
         let lsp_len = lsp.len();
@@ -165,19 +176,13 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
         for (k,i,j) in lip {
             let x = arr[(k,i,j)];
             let is_sig = is_element_sig(x, n);
-            data.push(is_sig);
-            if data.len() == max_bits {
-                return (data, max_n)
-            }
+            push_bit!(is_sig);
 
             if is_sig {
                 lsp.push_back((k,i,j));
 
                 let sign = x >=0;
-                data.push(sign);
-                if data.len() == max_bits {
-                    return (data, max_n)
-                }
+                push_bit!(sign);
             } else {
                 lip_retain.push_back((k,i,j));
             }
@@ -199,28 +204,19 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
                     }
                 }
 
-                data.push(desc_sig);
-                if data.len() == max_bits {
-                    return (data, max_n)
-                }
+                push_bit!(desc_sig);
 
                 if desc_sig {
                     for (l,m) in offspring.unwrap() {
                         let sig = is_element_sig(arr[(k,l,m)], n);
 
-                        data.push(sig);
-                        if data.len() == max_bits {
-                            return (data, max_n)
-                        }
+                        push_bit!(sig);
 
                         if sig {
                             lsp.push_back((k,l,m));
 
                             let sign = arr[(k,l,m)] >= 0;
-                            data.push(sign);
-                            if data.len() == max_bits {
-                                return (data, max_n)
-                            }
+                            push_bit!(sign);
                         } else {
                             lip.push_back((k,l,m));
                         }
@@ -239,10 +235,7 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
             } else {
                 // type B
                 let l_sig = is_l_sig(arr, k, i, j, n, ll_h, ll_w);
-                data.push(l_sig);
-                if data.len() == max_bits {
-                    return (data, max_n)
-                }
+                push_bit!(l_sig);
 
                 if l_sig {
                     let offspring = get_offspring(i, j, h, w, ll_h, ll_w);
@@ -263,10 +256,7 @@ pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -
             let (k,i,j) = lsp[lsp_i];
             let bit = is_bit_set(arr[(k,i,j)], n);
 
-            data.push(bit);
-            if data.len() == max_bits {
-                return (data, max_n)
-            }
+            push_bit!(bit);
         }
 
 
@@ -287,18 +277,6 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
 
     assert!(ll_h > 1);
     assert!(ll_w > 1);
-
-    //let mut cur_i = 0;
-    //let mut pop_front = || {
-    //    let ret: Option<bool>;
-    //    if cur_i >= data.len() {
-    //        ret = None
-    //    } else {
-    //        ret = Some(data[cur_i]);
-    //    }
-    //    cur_i += 1;
-    //    return ret
-    //};
 
     let mut cur_i = 0;
     macro_rules! pop_bit {
