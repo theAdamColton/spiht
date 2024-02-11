@@ -9,7 +9,7 @@ use pyo3::{
     PyResult, Python, PyObject, wrap_pyfunction,
 };
 
-use encoder_decoder::{encode, decode};
+use encoder_decoder::{decode, decode_with_metadata, encode, Slices};
 mod encoder_decoder;
 
 
@@ -37,10 +37,28 @@ fn decode_spiht<'py>(py: Python<'py>, data_u8: Vec<u8>, n: u8, c: usize, h: usiz
     rec_arr.to_pyarray(py)
 }
 
+/// Decode DWT coefficients from bytes
+/// Also return intermediate metadata
+/// of the spiht algorithm
+#[pyfunction]
+#[pyo3(name="decode_with_metadata")]
+fn decode_spiht_with_metadata<'py>(py:Python<'py>, data_u8: Vec<u8>, n: u8, c: usize, h: usize, w:usize, ll_h: usize, ll_w: usize, top_slice: Vec<(usize, usize)>, other_slices: Vec<Vec<Vec<(usize, usize)>>>) -> (&'py PyArray<i32, Dim<[usize; 3]>>, &'py PyArray<i32, Dim<[usize; 2]>>){
+    let mut data = BitVec::repeat(false, data_u8.len() * 8);
+    for (slot, byte) in data.chunks_mut(8).zip(data_u8.into_iter()) {
+      slot.store_le(byte);
+    }
+
+    let slices = Slices::from_vec(top_slice, other_slices);
+
+    let (rec_arr,metadata_arr) = decode_with_metadata(data, n, c, h, w, ll_h, ll_w, slices);
+    (rec_arr.to_pyarray(py), metadata_arr.to_pyarray(py))
+}
+
 #[pymodule]
 fn spiht<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(encode_spiht, m)?)?;
     m.add_function(wrap_pyfunction!(decode_spiht, m)?)?;
+    m.add_function(wrap_pyfunction!(decode_spiht_with_metadata, m)?)?;
 
     Ok(())
 }

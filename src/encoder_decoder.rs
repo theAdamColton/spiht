@@ -589,8 +589,8 @@ fn get_level(mut h:usize, mut w:usize,ll_h: usize, ll_w: usize) -> u8 {
 }
 
 fn get_local_position(coefficient: &CoefficientMetadata, slices: &Slices, level: u8) -> (i32, i32) {
-    let local_w: f32;
     let local_h: f32;
+    let local_w: f32;
     if coefficient.depth == level {
         debug_assert!(coefficient.filter == 0);
         local_h = coefficient.height as f32 / slices.top_slice.end_i as f32;
@@ -599,12 +599,16 @@ fn get_local_position(coefficient: &CoefficientMetadata, slices: &Slices, level:
         let depth_i = level - 1 - coefficient.depth;
         let filter_i = coefficient.filter as usize - 1;
         let filter_slice = &slices.other_slices[depth_i as usize].0[filter_i];
+        // height as a fraction from 0 to 1
         local_h = (coefficient.height as f32 - filter_slice.start_i as f32) / ((filter_slice.end_i - filter_slice.start_i) as f32);
+        // width as a fraction from 0 to 1
         local_w = (coefficient.width as f32 - filter_slice.start_j as f32) / ((filter_slice.end_j - filter_slice.start_j) as f32);
     }
 
-    ((local_w * 100_000.) as i32, (local_h * 100_000.) as i32)
+    // as an integer from -100_000 to 100_000
+    ((local_h * 200_000. - 100_000.) as i32, (local_w * 200_000. - 100_000.) as i32)
 }
+
 
 /// Spiht metadata, which is a 8 length torch.LongTensor vector
 ///  This contains the following:

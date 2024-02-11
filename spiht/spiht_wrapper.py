@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Tuple, Union
 import numpy as np
 import pywt
 
@@ -181,9 +181,22 @@ def encode_image(image: np.ndarray, spiht_settings:SpihtSettings=SpihtSettings()
     return encoding_result
 
 
-def decode_image(encoding_result: EncodingResult, spiht_settings: SpihtSettings) -> np.ndarray:
+def decode_image(encoding_result: EncodingResult, spiht_settings: SpihtSettings, return_metadata:bool=False) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
     """
     Decodes the encoding_result to pixel values
+
+    encoding_result: EncodingResult
+        This is the encoding_result that was returned by the encode_image
+        function
+
+    spiht_settings: SpihtSettings
+        These are the settings passed to the encode_image function
+
+    return_metadata: Bool
+        If true, will return a tuple of reconstructed image and spiht metadata
+        The spiht metadata is a 2D numpy i32 array containing at each position
+        a vector describing the internal state of the spiht decoder. The number
+        of rows is equal to the number of encoded bits.
     """
     encoded_bytes = encoding_result.encoded_bytes
     h = encoding_result.h
@@ -204,7 +217,27 @@ def decode_image(encoding_result: EncodingResult, spiht_settings: SpihtSettings)
     color_model=spiht_settings.color_model
     per_channel_quant_scales=spiht_settings.per_channel_quant_scales
 
-    rec_arr = spiht_rs.decode(encoded_bytes, max_n, c, enc_h, enc_w, ll_h, ll_w)
+    if return_metadata:
+        top_slice = [
+                (slices[0][1].start or 0, slices[0][1].stop),
+                (slices[0][2].start or 0, slices[0][2].stop),
+                ]
+        other_slices = []
+        for slice_level in slices[1:]:
+            slice_filters = []
+            for filter_key in ["ad", "da", "dd"]:
+                slice_filter = slice_level[filter_key]
+                slice_filters.append(
+                        [
+                            (slice_filter[1].start or 0, slice_filter[1].stop or h),
+                            (slice_filter[2].start or 0, slice_filter[2].stop or w),
+                        ]
+                    )
+            other_slices.append(slice_filters)
+
+        rec_arr, spiht_metadata = spiht_rs.decode_with_metadata(encoded_bytes, max_n, c, enc_h, enc_w, ll_h, ll_w, top_slice, other_slices)
+    else:
+        rec_arr = spiht_rs.decode(encoded_bytes, max_n, c, enc_h, enc_w, ll_h, ll_w)
 
     if per_channel_quant_scales is not None:
         channel_mults = np.array(per_channel_quant_scales)
@@ -216,5 +249,8 @@ def decode_image(encoding_result: EncodingResult, spiht_settings: SpihtSettings)
 
     if color_model is not None:
         rec_image = color_models.convert(rec_image, color_model, "RGB")
+
+    if return_metadata:
+        return rec_image, spiht_metadata
 
     return rec_image

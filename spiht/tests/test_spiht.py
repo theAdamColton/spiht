@@ -14,3 +14,14 @@ class Tests(unittest.TestCase):
             decoded_image = decode_image(encoded, spiht_settings)
             # Uncomment the following line to get the script to show the two images
             #imshow(decoded_image)
+
+    def test_encode_decode_with_metadata(self):
+        for image_file in os.listdir("./images/"):
+            image = imload(f"./images/{image_file}")
+            spiht_settings = SpihtSettings()
+            encoded = encode_image(image, spiht_settings=spiht_settings)
+            decoded_image, spiht_metadata = decode_image(encoded, spiht_settings, return_metadata=True)
+            import bpdb
+            bpdb.set_trace()
+            # Uncomment the following line to get the script to show the two images
+            imshow(decoded_image)
