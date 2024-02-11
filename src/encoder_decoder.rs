@@ -120,6 +120,38 @@ fn is_l_sig(arr: ArrayView3<i32>,k: usize,i: usize,j:usize,n:u8, ll_h: usize, ll
     false
 }
 
+#[derive(Debug)]
+struct CoefficientMetadata {
+    depth: u8,
+    filter: u8,
+    channel: usize,
+    height: usize,
+    width: usize,
+}
+
+impl CoefficientMetadata {
+    fn global_coords(&self) -> (usize,usize,usize) {
+        (self.channel, self.height, self.width)
+    }
+
+    fn get_offspring_filter(&self) -> u8 {
+        let filter = self.filter;
+        if filter == Filter::LL as u8 {
+            debug_assert!(!(self.height % 2 == 0 && self.width % 2 == 0));
+            if self.height % 2 == 1 && self.width % 2 == 1 {
+                return Filter::DD as u8;
+            } else if self.height % 2 == 0 && self.width % 2 != 0 {
+                return Filter::AD as u8;
+            } else {
+                return Filter::DA as u8;
+            }
+        }
+        filter
+    }
+}
+
+
+
 pub fn encode(arr: ArrayView3<i32>, ll_h: usize, ll_w: usize, max_bits: usize) -> (BitVec, u8) {
     let c = arr.shape()[0];
     let h = arr.shape()[1];
@@ -418,6 +450,10 @@ pub fn decode(data: BitVec, mut n: u8, c:usize, h: usize, w: usize, ll_h: usize,
         n-= 1;
     }
 
+    let extra_bits = data.len() as i32 - 1 - cur_i as i32;
+    if extra_bits > 0 {
+        println!("SPIHT DECODER EXHAUSTED extra bits {extra_bits}");
+    }
     rec_arr
 }
 
@@ -427,15 +463,6 @@ enum Filter {
     DA = 1,
     AD = 2,
     DD = 3
-}
-
-#[derive(Debug)]
-struct CoefficientMetadata {
-    depth: u8,
-    filter: u8,
-    channel: usize,
-    height: usize,
-    width: usize,
 }
 
 #[derive(Debug)]
@@ -555,27 +582,6 @@ impl Slices {
     }
 }
 
-
-impl CoefficientMetadata {
-    fn global_coords(&self) -> (usize,usize,usize) {
-        (self.channel, self.height, self.width)
-    }
-
-    fn get_offspring_filter(&self) -> u8 {
-        let filter = self.filter;
-        if filter == Filter::LL as u8 {
-            debug_assert!(!(self.height % 2 == 0 && self.width % 2 == 0));
-            if self.height % 2 == 1 && self.width % 2 == 1 {
-                return Filter::DD as u8;
-            } else if self.height % 2 == 0 && self.width % 2 != 0 {
-                return Filter::AD as u8;
-            } else {
-                return Filter::DA as u8;
-            }
-        }
-        filter
-    }
-}
 
 
 fn get_level(mut h:usize, mut w:usize,ll_h: usize, ll_w: usize) -> u8 {
@@ -779,7 +785,8 @@ pub fn decode_with_metadata(
                     }
 
                     // has_descendents_past_offspring
-                    let l_exists = coefficient.depth > 1;
+                    //let l_exists = coefficient.depth > 1;
+                    let l_exists = has_descendents_past_offspring(coefficient.height, coefficient.width, h, w);
                     if l_exists {
                         lis.push_back((false, coefficient));
                     }
@@ -830,6 +837,11 @@ pub fn decode_with_metadata(
         }
 
         n-= 1;
+    }
+
+    let extra_bits = data.len() as i32 - 1 - cur_i as i32;
+    if extra_bits > 0 {
+        println!("SPIHT METADATA DECODER EXHAUSTED extra bits {extra_bits}");
     }
 
     (rec_arr, metadata_arr)

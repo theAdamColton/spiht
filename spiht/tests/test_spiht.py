@@ -23,6 +23,6 @@ class Tests(unittest.TestCase):
             encoded = encode_image(image, spiht_settings=spiht_settings)
             decoded_image, spiht_metadata = decode_image(encoded, spiht_settings, return_metadata=True)
             decoded_image_2 = decode_image(encoded, spiht_settings, return_metadata=False)
-            self.assertTrue(np.allclose(decoded_image, decoded_image_2))
             # Uncomment the following line to get the script to show the two images
             #imshow(decoded_image)
+            self.assertTrue(np.allclose(decoded_image, decoded_image_2))
