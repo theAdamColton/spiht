@@ -601,6 +601,7 @@ fn get_local_position(coefficient: &CoefficientMetadata, slices: &Slices, level:
         let depth_i = level - 1 - coefficient.depth;
         let filter_i = coefficient.filter as usize - 1;
         let filter_slice = &slices.other_slices[depth_i as usize].0[filter_i];
+
         // height as a fraction from 0 to 1
         local_h = (coefficient.height as f32 - filter_slice.start_i as f32) / ((filter_slice.end_i - filter_slice.start_i) as f32);
         // width as a fraction from 0 to 1
@@ -638,7 +639,8 @@ pub fn decode_with_metadata(
     slices: Slices,
     ) -> (Array3<i32>, Array2<i32>) {
     let mut rec_arr = Array3::<i32>::zeros((c,h,w));
-    let mut metadata_arr = Array2::<i32>::zeros((data.len(), 8));
+    // one extra metadata for the bit which has yet to be decoded
+    let mut metadata_arr = Array2::<i32>::zeros((data.len() + 1, 8));
 
     assert!(ll_h > 1);
     assert!(ll_w > 1);
@@ -663,11 +665,11 @@ pub fn decode_with_metadata(
     macro_rules! assign_metadata {
         ( $action:expr, $coefficient:expr) => {
             {
-                if cur_i >= data.len() {
+                if cur_i >= metadata_arr.len() {
                     return (rec_arr, metadata_arr);
                 }
 
-                let (local_h, local_w) = ($coefficient.height as i32, $coefficient.width as i32);
+                let (local_h, local_w) = get_local_position(&$coefficient, &slices, level);
 
                 metadata_arr[(cur_i,0)] = $action;
                 metadata_arr[(cur_i,1)] = local_h;

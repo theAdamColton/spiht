@@ -109,13 +109,13 @@ def get_slices_and_h_w(h: int, w: int, spiht_settings: SpihtSettings, level: Opt
             {
                 "ad": (
                     slice(None),
-                    slice(shape_ad[1]),
+                    slice(0, shape_ad[1]),
                     slice(start_w, start_w + shape_ad[2]),
                 ),
                 "da": (
                     slice(None),
                     slice(start_h, start_h + shape_da[1]),
-                    slice(shape_da[2]),
+                    slice(0, shape_da[2]),
                 ),
                 "dd": (
                     slice(None),
@@ -225,12 +225,12 @@ def decode_image(encoding_result: EncodingResult, spiht_settings: SpihtSettings,
         other_slices = []
         for slice_level in slices[1:]:
             slice_filters = []
-            for filter_key in ["ad", "da", "dd"]:
+            for filter_key in ["da", "ad", "dd"]:
                 slice_filter = slice_level[filter_key]
                 slice_filters.append(
                         [
-                            (slice_filter[1].start or 0, slice_filter[1].stop or h),
-                            (slice_filter[2].start or 0, slice_filter[2].stop or w),
+                            (slice_filter[1].start, slice_filter[1].stop),
+                            (slice_filter[2].start, slice_filter[2].stop),
                         ]
                     )
             other_slices.append(slice_filters)
