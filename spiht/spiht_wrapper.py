@@ -211,12 +211,6 @@ def decode_image(encoding_result: EncodingResult, spiht_settings: SpihtSettings,
     slices, enc_h, enc_w = get_slices_and_h_w(h,w,spiht_settings,level)
     ll_h, ll_w = slices[0][1].stop, slices[0][2].stop
 
-    wavelet = spiht_settings.wavelet
-    quantization_scale = spiht_settings.quantization_scale
-    mode=spiht_settings.mode
-    color_model=spiht_settings.color_model
-    per_channel_quant_scales=spiht_settings.per_channel_quant_scales
-
     if return_metadata:
         top_slice = [
                 (slices[0][1].start or 0, slices[0][1].stop),
@@ -239,6 +233,22 @@ def decode_image(encoding_result: EncodingResult, spiht_settings: SpihtSettings,
     else:
         rec_arr = spiht_rs.decode(encoded_bytes, max_n, c, enc_h, enc_w, ll_h, ll_w)
 
+    if return_metadata:
+        return decode_rec_array(rec_arr, h, w, level, spiht_settings), spiht_metadata
+    else:
+        return decode_rec_array(rec_arr, h, w, level, spiht_settings)
+
+def decode_rec_array(rec_arr:np.ndarray, h, w, level, spiht_settings:SpihtSettings, slices=None):
+    wavelet = spiht_settings.wavelet
+    quantization_scale = spiht_settings.quantization_scale
+    mode=spiht_settings.mode
+    color_model=spiht_settings.color_model
+    per_channel_quant_scales=spiht_settings.per_channel_quant_scales
+
+    if slices is None:
+        slices, _, _ = get_slices_and_h_w(h,w,spiht_settings,level)
+
+
     if per_channel_quant_scales is not None:
         channel_mults = np.array(per_channel_quant_scales)
         rec_arr = rec_arr / channel_mults[:,None,None]
@@ -249,8 +259,5 @@ def decode_image(encoding_result: EncodingResult, spiht_settings: SpihtSettings,
 
     if color_model is not None:
         rec_image = color_models.convert(rec_image, color_model, "RGB")
-
-    if return_metadata:
-        return rec_image, spiht_metadata
 
     return rec_image
