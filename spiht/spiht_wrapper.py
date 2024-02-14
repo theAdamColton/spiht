@@ -198,6 +198,16 @@ def decode_image(encoding_result: EncodingResult, spiht_settings: SpihtSettings,
         a vector describing the internal state of the spiht decoder. The number
         of rows is equal to the number of encoded bits.
     """
+    d = decode_rec_array(encoding_result, spiht_settings, return_metadata)
+    spiht_metadata = d.pop("spiht_metadata", None)
+    image = decode_from_rec_arr(**d, spiht_settings=spiht_settings)
+
+    if return_metadata:
+        return image, spiht_metadata
+    else:
+        return image
+
+def decode_rec_array(encoding_result: EncodingResult, spiht_settings: SpihtSettings, return_metadata:bool=False):
     encoded_bytes = encoding_result.encoded_bytes
     h = encoding_result.h
     w = encoding_result.w
@@ -232,13 +242,13 @@ def decode_image(encoding_result: EncodingResult, spiht_settings: SpihtSettings,
         rec_arr, spiht_metadata = spiht_rs.decode_with_metadata(encoded_bytes, max_n, c, enc_h, enc_w, ll_h, ll_w, top_slice, other_slices)
     else:
         rec_arr = spiht_rs.decode(encoded_bytes, max_n, c, enc_h, enc_w, ll_h, ll_w)
+        spiht_metadata = None
 
-    if return_metadata:
-        return decode_rec_array(rec_arr, h, w, level, spiht_settings), spiht_metadata
-    else:
-        return decode_rec_array(rec_arr, h, w, level, spiht_settings)
+    return dict(
+            rec_arr = rec_arr, slices=slices, spiht_metadata=spiht_metadata, h=h, w=w, level=level
+            )
 
-def decode_rec_array(rec_arr:np.ndarray, h, w, level, spiht_settings:SpihtSettings, slices=None):
+def decode_from_rec_arr(rec_arr:np.ndarray, h:int, w:int, level, spiht_settings:SpihtSettings, slices=None):
     wavelet = spiht_settings.wavelet
     quantization_scale = spiht_settings.quantization_scale
     mode=spiht_settings.mode
