@@ -4,7 +4,7 @@ requires = ["maturin>=1.0,<2.0"]
 
 [project]
 name="spiht-py"
-version="0.1.0"
+version="0.1.1"
 description = "SPIHT image compression algorithm with a rust backend."
 dependencies = [
   "colour-science == 0.4.4",

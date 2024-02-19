@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import List, Optional, Any, Tuple, Union
 import numpy as np
 import pywt
@@ -79,6 +79,14 @@ class EncodingResult:
     max_n: int
     level: Optional[int]
     _encoding_version: str = ENCODER_DECODER_VERSION
+
+    def to_dict(self):
+        return {f"encoding_result{k}":v for k,v in asdict(self).items()}
+
+    @staticmethod
+    def from_dict(d):
+        d = {k.removeprefix('encoding_result'):v for k,v in d.items() if k.startswith('encoding_result')}
+        return EncodingResult(**d)
 
 
 def get_slices_and_h_w(h: int, w: int, spiht_settings: SpihtSettings, level: Optional[int]):

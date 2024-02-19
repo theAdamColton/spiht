@@ -1,7 +1,9 @@
+import torch
 import imageio
 import numpy as np
 import sys
 from PIL import Image, ImageDraw, ImageFont
+from torchvision import transforms
 from tqdm import tqdm
 
 from spiht.spiht_wrapper import SpihtSettings, get_slices_and_h_w
@@ -10,12 +12,13 @@ from spiht import encode_image,decode_image
 from spiht.spiht import decode
 
 spiht_settings = SpihtSettings(
-       quantization_scale=150,
-       color_model='Jzazbz',
+       quantization_scale=75,
+       color_model='IPT',
        per_channel_quant_scales=[8,1,1],
        wavelet="bior4.4",
        mode="symmetric",
 )
+level = 7
 
 frames = 40
 
@@ -32,7 +35,7 @@ c,h,w = im.shape
 max_bpp = bpps.max()
 encoded = encode_image(
         im, spiht_settings,
-        None,
+        level,
         max_bits=int(max_bpp * h * w)
         )
 original_bytes = encoded.encoded_bytes
@@ -56,12 +59,10 @@ for bpp in tqdm(bpps):
     slices, enc_h, enc_w = get_slices_and_h_w(h,w,spiht_settings,encoded.level)
     ll_h, ll_w = slices[0][1].stop, slices[0][2].stop
     dwt_coeffs_arr = decode(_bytes, encoded.max_n, c, enc_h, enc_w, ll_h, ll_w)
-    dwt_coeffs_im = dwt_coeffs_arr * 500.0
+    dwt_coeffs_im = np.abs(dwt_coeffs_arr) * 75.0
 
     # rec_im might be smaller than dwt_coeffs_im
-    rec_im_padded = np.zeros_like(dwt_coeffs_im)
-    rec_im_padded[:,:h,:w] = rec_im
-    rec_im = rec_im_padded
+    dwt_coeffs_im = transforms.Resize((rec_im.shape[1], rec_im.shape[2]))(torch.from_numpy(dwt_coeffs_im)).numpy()
 
     out_im = np.concatenate(
             (
