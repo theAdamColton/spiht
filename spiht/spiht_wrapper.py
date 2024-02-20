@@ -81,11 +81,11 @@ class EncodingResult:
     _encoding_version: str = ENCODER_DECODER_VERSION
 
     def to_dict(self):
-        return {f"encoding_result{k}":v for k,v in asdict(self).items()}
+        return {f"encoding_result_{k}":v for k,v in asdict(self).items()}
 
     @staticmethod
     def from_dict(d):
-        d = {k.removeprefix('encoding_result'):v for k,v in d.items() if k.startswith('encoding_result')}
+        d = {k.removeprefix('encoding_result_'):v for k,v in d.items() if k.startswith('encoding_result_')}
         return EncodingResult(**d)
 
 
