@@ -1,4 +1,4 @@
-# spiht-py
+# spiht
 
 <p align="center">
 <img width="220" alt="Screenshot 2024-01-27 at 11 15 47" src="https://github.com/theAdamColton/spiht-py/assets/72479734/52d8375c-7ed9-44c4-9ace-71edd14dc25a">
